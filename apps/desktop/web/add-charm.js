@@ -38,17 +38,17 @@ async function showNetwork() {
   if (!settings.managed)
     note(
       "network-note",
-      "Charms on this network need the app's own charmd: turn off Another charmd in Settings → Advanced.",
+      "“此网络上的挂件”需要应用自带的 charmd：请在 设置 → 高级 中关闭“另一个 charmd”。",
       "bad"
     );
   else if (on && status.state === "running")
-    note("network-note", "On. Your charm can reach this computer.", "ok");
+    note("network-note", "已开启。你的挂件可以连接到这台电脑。", "ok");
   else if (on && status.state === "starting")
-    note("network-note", "Starting charmd…");
+    note("network-note", "正在启动 charmd…");
   else if (on)
     note(
       "network-note",
-      `charmd isn't running${status.detail ? `: ${status.detail}` : ""}. If another charmd uses port 8787, stop it, or turn this off in Settings.`,
+      `charmd 没有运行${status.detail ? `：${status.detail}` : ""}。如果另一个 charmd 占用了 8787 端口，请停止它，或在设置中关闭此功能。`,
       "bad"
     );
   else note("network-note", "");
@@ -71,8 +71,7 @@ $("network-on").addEventListener("click", async () => {
 // Step 2: Wi-Fi, with the address to type when the charm doesn't find this computer by itself.
 async function showWifi() {
   const address = await invoke("charm_network_address").catch(() => null);
-  $("address").textContent =
-    address ?? "this computer's address on your network, port 8787";
+  $("address").textContent = address ?? "这台电脑在你网络上的地址，端口 8787";
   $("copy").hidden = !address;
   $("copy").onclick = () => navigator.clipboard.writeText(address ?? "");
 }
@@ -83,10 +82,10 @@ async function showWaiting() {
     const kinds = await invoke("charms_waiting");
     $("waiting").textContent =
       kinds.length === 0
-        ? "Waiting for your charm… (its screen shows a 6-digit code once it's on Wi-Fi)"
+        ? "正在等待你的挂件…（它连上 Wi-Fi 后，屏幕会显示 6 位验证码）"
         : kinds.length === 1
-          ? "A charm is waiting. Type the code on its screen:"
-          : `${kinds.length} charms are waiting. Type the code on yours:`;
+          ? "一个挂件正在等待。输入它屏幕上的验证码："
+          : `${kinds.length} 个挂件正在等待。输入你的挂件屏幕上的验证码：`;
     if (kinds.length > 0) react("joy", 1200);
   } catch (error) {
     $("waiting").textContent = String(error);
@@ -154,11 +153,11 @@ async function showUnlock() {
       note(
         "done-note",
         b
-          ? `All set. ${paired} is at ${b.percent}%${b.charging ? ", charging" : ""}.`
-          : `All set. ${paired} is ready.`,
+          ? `一切就绪。${paired} 电量 ${b.percent}%${b.charging ? "，正在充电" : ""}。`
+          : `一切就绪。${paired} 准备好了。`,
         "ok"
       );
-      $("next").textContent = "Done";
+      $("next").textContent = "完成";
       $("next").disabled = false;
       react("joy", 2000);
     }
@@ -185,7 +184,7 @@ const ENTER = {
   4: async () => {
     // Close is there while it waits: a PIN mistyped on the charm, or a charm that never unlocks,
     // isn't a dead end (Settings lists it, and Remove starts over).
-    $("next").textContent = "Close";
+    $("next").textContent = "关闭";
     $("next").disabled = false;
     polling = setInterval(showUnlock, POLL_MS);
     await showUnlock();
@@ -200,7 +199,7 @@ async function show(n) {
     d.classList.toggle("on", i + 1 <= n)
   );
   $("back").style.visibility = n === 1 || n === 4 ? "hidden" : "visible";
-  $("next").textContent = n === 3 ? "Pair" : "Continue";
+  $("next").textContent = n === 3 ? "配对" : "继续";
   await ENTER[n]?.();
 }
 

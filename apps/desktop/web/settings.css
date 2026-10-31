@@ -63,7 +63,9 @@ body {
 code,
 select,
 input {
-  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family:
+    "Geist Mono", ui-monospace, "SF Mono", Menlo, "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
 }
 .mono {
   font-size: 11px;
@@ -255,7 +257,9 @@ footer {
   font-size: 15px;
 }
 .mono-path {
-  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family:
+    "Geist Mono", ui-monospace, "SF Mono", Menlo, "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;

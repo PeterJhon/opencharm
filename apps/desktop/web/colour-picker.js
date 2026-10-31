@@ -2,6 +2,15 @@
 // or one typed as #RRGGBB. Shared by Settings and the setup; the page saves it, charmd judges it.
 const COLORS = window.CharmFace.COLORS;
 const OWN_COLOUR = /^#[0-9A-F]{6}$/i;
+// The six colours' names, as the design package has them in English.
+const NAMES = {
+  white: "白色",
+  cobalt: "钴蓝",
+  lime: "青柠",
+  lilac: "丁香紫",
+  sun: "阳光黄",
+  coal: "炭黑",
+};
 
 // The face engine's colour for an id or a #RRGGBB: a colour of your own lights a white charm's glyphs.
 export function colourOf(id) {
@@ -20,14 +29,13 @@ export function mountColourPicker(
   root.innerHTML = `
     <div class="colour-row">
       <div class="swatches" role="radiogroup" aria-labelledby="${labelledBy}"></div>
-      <input type="color" class="swatch own" title="A colour of your own" aria-label="A colour of your own" />
+      <input type="color" class="swatch own" title="自定义颜色" aria-label="自定义颜色" />
     </div>
     <div class="row">
-      <input class="own-hex" maxlength="7" spellcheck="false" placeholder="#RRGGBB" aria-label="A colour of your own, as #RRGGBB" />
+      <input class="own-hex" maxlength="7" spellcheck="false" placeholder="#RRGGBB" aria-label="自定义颜色，格式 #RRGGBB" />
     </div>
     <p class="note">
-      Or your own colour, picked or typed: anything but orange, which only means "it needs you",
-      and bright enough to see on black.
+      或者你自己的颜色，选取或输入：不要用橙色（橙色只表示“它需要你”），并且要够亮，能在黑色上看见。
     </p>`;
   const swatches = root.querySelector(".swatches");
   const own = root.querySelector(".own");
@@ -42,8 +50,8 @@ export function mountColourPicker(
     swatch.dataset.id = colour.id;
     swatch.style.setProperty("--c", colour.c);
     swatch.setAttribute("role", "radio");
-    swatch.setAttribute("aria-label", colour.name);
-    swatch.title = colour.name;
+    swatch.setAttribute("aria-label", NAMES[colour.id] ?? colour.name);
+    swatch.title = NAMES[colour.id] ?? colour.name;
     swatch.addEventListener("click", () => void pick(colour.id));
     swatches.append(swatch);
   }
@@ -80,7 +88,7 @@ export function mountColourPicker(
     const typed = hex.value.trim().toUpperCase();
     if (!typed) return;
     const colour = typed.startsWith("#") ? typed : `#${typed}`;
-    if (!OWN_COLOUR.test(colour)) return onError("Type a colour as #RRGGBB.");
+    if (!OWN_COLOUR.test(colour)) return onError("请按 #RRGGBB 格式输入颜色。");
     void pick(colour);
   });
 

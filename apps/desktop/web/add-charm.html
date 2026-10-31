@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Add a charm</title>
+    <title>添加挂件</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="setup.css" />
@@ -11,72 +11,68 @@
   <body class="setup">
     <header>
       <div class="charm" id="face" aria-hidden="true"></div>
-      <p class="mono dim">ADD A CHARM</p>
+      <p class="mono dim">添加挂件</p>
     </header>
 
     <main>
       <section data-step="1" aria-labelledby="t1">
-        <p class="mono dim">STEP 1 OF 4</p>
-        <h1 id="t1">Let it reach this computer</h1>
+        <p class="mono dim">第 1 步，共 4 步</p>
+        <h1 id="t1">让它连接到这台电脑</h1>
         <p class="lede">
-          A charm you built connects to your agent through this app, over your
-          Wi-Fi. Turn on <b>Charms on this network</b>, then plug the charm in
-          with USB.
+          你做的挂件通过这个应用经 Wi-Fi 连接到你的智能体。打开
+          <b>此网络上的挂件</b>，然后用 USB 插上挂件。
         </p>
         <div class="row">
           <button type="button" class="pill small" id="network-on">
-            Turn on Charms on this network
+            打开“此网络上的挂件”
           </button>
         </div>
         <p class="note" id="network-note"></p>
         <p class="note" id="mac-note" hidden>
-          macOS asks whether OpenCharm may find devices on your local network,
-          and, with the firewall on, whether "node" may accept incoming
-          connections: that's OpenCharm's charmd. Choose Allow both times.
-          Missed one? Allow OpenCharm in System Settings → Privacy &amp;
-          Security → Local Network, and node in System Settings → Network →
-          Firewall → Options, then quit and reopen OpenCharm.
+          macOS 会询问 OpenCharm
+          能否发现本地网络上的设备，以及（防火墙开启时）“node”能否接受传入连接：那是
+          OpenCharm 的 charmd。两次都选择允许。错过了？在 系统设置 →
+          隐私与安全性 → 本地网络 中允许 OpenCharm，并在 系统设置 → 网络 →
+          防火墙 → 选项 中允许 node，然后退出并重新打开 OpenCharm。
         </p>
       </section>
 
       <section data-step="2" aria-labelledby="t2" hidden>
-        <p class="mono dim">STEP 2 OF 4</p>
-        <h1 id="t2">Connect it to your Wi-Fi</h1>
+        <p class="mono dim">第 2 步，共 4 步</p>
+        <h1 id="t2">连接到你的 Wi-Fi</h1>
         <ol class="steps">
           <li>
-            The charm's screen shows a Wi-Fi name, <b>OpenCharm-…</b>, and a
-            password. On your phone, join that network with that password.
+            挂件的屏幕会显示 Wi-Fi 名称
+            <b>OpenCharm-…</b> 和密码。用手机加入那个网络并输入密码。
           </li>
           <li>
-            A page opens (or go to <span class="mono">192.168.4.1</span>). Pick
-            your Wi-Fi, 2.4 GHz, and type its password.
+            会打开一个页面（或访问
+            <span class="mono">192.168.4.1</span>）。选择你的 Wi-Fi（2.4
+            GHz），输入密码。
           </li>
-          <li>
-            Leave everything else as it is: the charm finds this computer by
-            itself.
-          </li>
+          <li>其余保持原样：挂件会自己找到这台电脑。</li>
         </ol>
         <details>
-          <summary>If it says "No charmd" after a minute</summary>
+          <summary>如果一分钟后显示“No charmd”</summary>
           <p class="note">
-            Hold its key for 5 seconds to open its Wi-Fi page again, open
-            <b>charmd address</b> at the bottom, and type:
+            按住它的按键 5 秒重新打开 Wi-Fi 页面，点底部的
+            <b>charmd 地址</b>，然后输入：
           </p>
           <div class="row">
             <span class="mono" id="address">…</span>
             <button type="button" class="pill ghost small" id="copy">
-              Copy
+              复制
             </button>
           </div>
         </details>
       </section>
 
       <section data-step="3" aria-labelledby="t3" hidden>
-        <p class="mono dim">STEP 3 OF 4</p>
-        <h1 id="t3">Pair it</h1>
-        <p class="lede" id="waiting">Waiting for your charm…</p>
+        <p class="mono dim">第 3 步，共 4 步</p>
+        <h1 id="t3">配对</h1>
+        <p class="lede" id="waiting">正在等待你的挂件…</p>
         <label class="field">
-          <span>The code on the charm's screen</span>
+          <span>挂件屏幕上的验证码</span>
           <input
             id="code"
             inputmode="numeric"
@@ -86,38 +82,38 @@
           />
         </label>
         <label class="field">
-          <span>Its name (lowercase letters, digits and hyphens)</span>
+          <span>它的名字（小写字母、数字和连字符）</span>
           <input id="name" maxlength="40" spellcheck="false" />
         </label>
         <label class="field">
-          <span>A PIN to unlock it (4 to 12 digits)</span>
+          <span>解锁用的 PIN（4 到 12 位数字）</span>
           <input id="pin" type="password" inputmode="numeric" maxlength="12" />
         </label>
         <label class="field">
-          <span>The PIN again</span>
+          <span>再输入一次 PIN</span>
           <input id="pin2" type="password" inputmode="numeric" maxlength="12" />
         </label>
         <p class="note" id="pair-note"></p>
       </section>
 
       <section data-step="4" aria-labelledby="t4" hidden>
-        <p class="mono dim">STEP 4 OF 4</p>
-        <h1 id="t4">Unlock it</h1>
-        <p class="lede">Type the PIN you chose on the charm's screen.</p>
+        <p class="mono dim">第 4 步，共 4 步</p>
+        <h1 id="t4">解锁</h1>
+        <p class="lede">在挂件屏幕上输入你选的 PIN。</p>
         <ul class="checks">
-          <li id="check-paired"><span class="dot running"></span>Paired</li>
-          <li id="check-unlocked"><span class="dot"></span>Unlocked</li>
+          <li id="check-paired"><span class="dot running"></span>已配对</li>
+          <li id="check-unlocked"><span class="dot"></span>已解锁</li>
         </ul>
         <p class="note" id="done-note"></p>
       </section>
     </main>
 
     <footer>
-      <button type="button" class="pill ghost" id="back">Back</button>
+      <button type="button" class="pill ghost" id="back">返回</button>
       <div class="dots" id="dots" aria-hidden="true">
         <span></span><span></span><span></span><span></span>
       </div>
-      <button type="button" class="pill" id="next">Continue</button>
+      <button type="button" class="pill" id="next">继续</button>
     </footer>
     <script type="module" src="add-charm.js"></script>
   </body>

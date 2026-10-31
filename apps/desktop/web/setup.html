@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Set up OpenCharm</title>
+    <title>设置 OpenCharm</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="colour-picker.css" />
@@ -17,22 +17,20 @@
 
     <main>
       <section data-step="1" aria-labelledby="t1">
-        <p class="mono dim">STEP 1 OF 6</p>
-        <h1 id="t1">Hi! Let's set up your charm.</h1>
+        <p class="mono dim">第 1 步，共 6 步</p>
+        <h1 id="t1">嗨！来设置你的挂件吧。</h1>
         <p class="lede">
-          It lives at the top of your screen and talks with the agent you
-          already use. Hold <kbd data-key></kbd> in any app to talk to it; press
-          it to stop it.
+          它住在屏幕顶部，和你已经在用的智能体对话。在任何应用中按住
+          <kbd data-key></kbd> 就能和它说话；按下则停止。
         </p>
         <p class="note">
-          Six short steps: your agent, its folder, a name and a colour, its
-          voice, and a first hello.
+          六个简短步骤：你的智能体、它的文件夹、名字和颜色、它的声音，以及第一次打招呼。
         </p>
       </section>
 
       <section data-step="2" aria-labelledby="t2" hidden>
-        <p class="mono dim">STEP 2 OF 6</p>
-        <h1 id="t2">Which agent should it talk to?</h1>
+        <p class="mono dim">第 2 步，共 6 步</p>
+        <h1 id="t2">它应该和哪个智能体对话？</h1>
         <div
           class="choices compact"
           id="agents"
@@ -40,80 +38,78 @@
           aria-labelledby="t2"
         ></div>
         <div class="extra" id="other-row" hidden>
-          <select id="other-kind" aria-label="What kind of agent">
-            <option value="command">An ACP agent, by its command</option>
-            <option value="server">A server (OpenAI-compatible)</option>
+          <select id="other-kind" aria-label="智能体类型">
+            <option value="command">通过命令启动的 ACP 智能体</option>
+            <option value="server">服务器（OpenAI 兼容）</option>
           </select>
           <input
             id="command"
             spellcheck="false"
             placeholder="my-agent --acp"
-            aria-label="The agent's command"
+            aria-label="智能体的命令"
           />
           <input
             id="server-url"
             spellcheck="false"
             placeholder="http://127.0.0.1:8642/v1"
-            aria-label="The server's address"
+            aria-label="服务器地址"
           />
           <input
             id="server-model"
             spellcheck="false"
             placeholder="model"
-            aria-label="The model"
+            aria-label="模型"
           />
         </div>
         <p class="note" id="agent-note"></p>
       </section>
 
       <section data-step="3" aria-labelledby="t3" hidden>
-        <p class="mono dim">STEP 3 OF 6</p>
-        <h1 id="t3">Its folder</h1>
-        <p class="lede">Where your agent keeps its notes and does its work.</p>
+        <p class="mono dim">第 3 步，共 6 步</p>
+        <h1 id="t3">它的文件夹</h1>
+        <p class="lede">智能体在这里记录和工作的位置。</p>
         <div class="choices" role="radiogroup" aria-labelledby="t3">
           <label class="choice">
             <input type="radio" name="folder-mode" value="create" checked />
             <span class="grow"
-              ><strong>Create a new workspace</strong
+              ><strong>创建新工作区</strong
               ><span class="note"
-                >A copy of the starter, ready for your charm. Recommended.</span
+                >起始模板的副本，为你的挂件准备好。推荐。</span
               ></span
             >
           </label>
           <label class="choice">
             <input type="radio" name="folder-mode" value="existing" />
             <span class="grow"
-              ><strong>Use a folder I have</strong
+              ><strong>使用已有的文件夹</strong
               ><span class="note"
-                >A workspace, or any folder your agent should work in.</span
+                >工作区，或任何你想让智能体工作的文件夹。</span
               ></span
             >
           </label>
         </div>
         <div class="extra" id="create-form">
-          <label class="mono" for="ws-name">NAME</label>
+          <label class="mono" for="ws-name">名字</label>
           <input
             id="ws-name"
             spellcheck="false"
             maxlength="64"
             value="my-charm"
           />
-          <span class="mono">LOCATION</span>
+          <span class="mono">位置</span>
           <div class="row">
             <span class="path grow" id="ws-location"></span>
             <button type="button" class="pill ghost small" id="browse">
-              Browse…
+              浏览…
             </button>
           </div>
           <p class="note" id="ws-target"></p>
         </div>
         <div class="extra" id="existing-form" hidden>
           <div class="row">
-            <span class="path grow" id="existing-path"
-              >No folder chosen yet.</span
-            >
+            <span class="path grow" id="existing-path">还没有选择文件夹。</span>
             <button type="button" class="pill ghost small" id="choose">
-              Choose…
+              选择…
             </button>
           </div>
         </div>
@@ -122,29 +118,27 @@
       </section>
 
       <section data-step="4" aria-labelledby="t4" hidden>
-        <p class="mono dim">STEP 4 OF 6</p>
-        <h1 id="t4">Your charm</h1>
-        <p class="lede">
-          Give it a name and a colour. You can change both later.
-        </p>
-        <label class="mono" for="look-name">NAME</label>
+        <p class="mono dim">第 4 步，共 6 步</p>
+        <h1 id="t4">你的挂件</h1>
+        <p class="lede">给它起个名字、选个颜色。以后都能改。</p>
+        <label class="mono" for="look-name">名字</label>
         <input id="look-name" maxlength="12" spellcheck="false" />
-        <span class="mono" id="colour-label">COLOUR</span>
+        <span class="mono" id="colour-label">颜色</span>
         <div id="colours"></div>
         <p class="note" id="look-note"></p>
       </section>
 
       <section data-step="5" aria-labelledby="t5" hidden>
-        <p class="mono dim">STEP 5 OF 6</p>
-        <h1 id="t5">Its voice</h1>
-        <label class="mono" for="speak">SPEAKING</label>
+        <p class="mono dim">第 5 步，共 6 步</p>
+        <h1 id="t5">它的声音</h1>
+        <label class="mono" for="speak">说话</label>
         <select id="speak">
-          <option value="microsoft">Microsoft's voices (free, online)</option>
-          <option value="local">On this computer (private)</option>
-          <option value="system">A macOS voice</option>
+          <option value="microsoft">微软的声音（免费，在线）</option>
+          <option value="local">在这台电脑上（私密）</option>
+          <option value="system">macOS 的声音</option>
         </select>
         <p class="note" id="speak-note"></p>
-        <label class="mono" for="language">LANGUAGE</label>
+        <label class="mono" for="language">语言</label>
         <select id="language">
           <option value="en">English</option>
           <option value="it">Italiano</option>
@@ -152,52 +146,46 @@
           <option value="fr">Français</option>
           <option value="de">Deutsch</option>
           <option value="pt">Português</option>
+          <option value="zh">中文</option>
         </select>
-        <p class="note">
-          It answers in the language you speak; this one is for when it can't
-          tell.
-        </p>
+        <p class="note">它会用你说话的语言回答；这项用于它听不出语言时。</p>
         <p class="note" id="listen-note"></p>
         <div class="row mic-row">
           <button type="button" class="pill ghost small" id="mic">
-            Allow the microphone
+            允许使用麦克风
           </button>
-          <p class="note grow" id="mic-note">
-            It listens only while you hold the key.
-          </p>
+          <p class="note grow" id="mic-note">只有你按住按键时它才聆听。</p>
         </div>
       </section>
 
       <section data-step="6" aria-labelledby="t6" hidden>
-        <p class="mono dim">STEP 6 OF 6</p>
-        <h1 id="t6">Say hi</h1>
-        <p class="lede">Hold <kbd data-key></kbd>, say hi, and let go.</p>
+        <p class="mono dim">第 6 步，共 6 步</p>
+        <h1 id="t6">打个招呼</h1>
+        <p class="lede">按住 <kbd data-key></kbd>，说声你好，然后松开。</p>
         <ul class="checks">
-          <li id="check-awake"><span class="dot"></span>Your charm is awake</li>
-          <li id="check-heard"><span class="dot"></span>It heard you</li>
-          <li id="check-answered">
-            <span class="dot"></span>Your agent answered
-          </li>
+          <li id="check-awake"><span class="dot"></span>挂件已醒</li>
+          <li id="check-heard"><span class="dot"></span>它听到了</li>
+          <li id="check-answered"><span class="dot"></span>智能体已回答</li>
         </ul>
         <p class="note" id="try-note"></p>
         <div class="row">
           <button type="button" class="pill small" id="refolder" hidden>
-            Choose its folder
+            选择它的文件夹
           </button>
           <button type="button" class="pill ghost small" id="retry" hidden>
-            Start it again
+            重新启动
           </button>
           <button type="button" class="pill ghost small" id="finish">
-            Finish anyway
+            仍然完成
           </button>
         </div>
       </section>
     </main>
 
     <footer>
-      <button type="button" class="pill ghost" id="back">Back</button>
+      <button type="button" class="pill ghost" id="back">返回</button>
       <div class="dots" id="dots" aria-hidden="true"></div>
-      <button type="button" class="pill" id="next">Continue</button>
+      <button type="button" class="pill" id="next">继续</button>
     </footer>
     <script type="module" src="setup.js"></script>
   </body>

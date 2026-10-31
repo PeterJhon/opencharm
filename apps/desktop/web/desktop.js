@@ -119,15 +119,15 @@ field.className = "type-field";
 field.type = "text";
 field.maxLength = 2000;
 field.spellcheck = true;
-field.placeholder = "Type, then Enter";
-field.setAttribute("aria-label", "Type to your charm");
+field.placeholder = "输入后按 Enter";
+field.setAttribute("aria-label", "打字给你的挂件");
 field.hidden = true;
 field.style.top = `${geometry.strip + 12}px`;
 document.body.append(field);
 
 function openField() {
   typing = true;
-  field.placeholder = "Type, then Enter";
+  field.placeholder = "输入后按 Enter";
   panel(true);
   field.hidden = false;
   field.value = "";
@@ -154,7 +154,7 @@ field.addEventListener("keydown", (e) => {
   // An older charmd doesn't take typed text: the field clears to say how to get it.
   if (result === "unsupported") {
     field.value = "";
-    field.placeholder = "Update opencharm to type: npm install -g opencharm";
+    field.placeholder = "更新 opencharm 后才能打字：npm install -g opencharm";
     return;
   }
   // The charm refuses while it asks a question or you're holding the key: keep the text then.

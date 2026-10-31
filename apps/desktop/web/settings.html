@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <title>OpenCharm</title>
@@ -12,9 +12,9 @@
     <header>
       <div class="charm" id="face" aria-hidden="true"></div>
       <div>
-        <p class="mono dim">OPENCHARM · DESKTOP</p>
-        <h1>Settings</h1>
-        <p class="lede">Your charm lives by the notch. Hold the key to talk.</p>
+        <p class="mono dim">OPENCHARM · 桌面版</p>
+        <h1>设置</h1>
+        <p class="lede">你的挂件住在屏幕顶部。按住按键说话。</p>
       </div>
     </header>
 
@@ -22,7 +22,7 @@
 
     <form id="form" autocomplete="off">
       <section id="agent-card">
-        <span class="mono">YOUR AGENT</span>
+        <span class="mono">你的智能体</span>
         <div class="status-card">
           <span class="dot" id="dot"></span>
           <div class="grow">
@@ -30,26 +30,25 @@
             <p class="note mono-path" id="where"></p>
           </div>
           <button type="button" class="pill ghost small" id="restart">
-            Restart
+            重启
           </button>
         </div>
         <p class="note" id="state-note"></p>
 
         <div class="managed">
-          <label class="mono" for="folder">FOLDER</label>
+          <label class="mono" for="folder">文件夹</label>
           <div class="row">
-            <input id="folder" readonly placeholder="Choose a folder" />
-            <button type="button" class="pill" id="choose">Choose…</button>
+            <input id="folder" readonly placeholder="选择文件夹" />
+            <button type="button" class="pill" id="choose">选择…</button>
           </div>
           <p class="note" id="folder-note">
-            An OpenCharm workspace (like Momo), or any folder your agent should
-            work in.
+            OpenCharm 工作区（例如 Momo），或任何你想让智能体工作的文件夹。
           </p>
           <button type="button" class="pill ghost" id="create" hidden>
-            Create a workspace here
+            在这里创建工作区
           </button>
 
-          <label class="mono" for="agent">AGENT</label>
+          <label class="mono" for="agent">智能体</label>
           <select id="agent"></select>
           <div class="row" id="command-row" hidden>
             <input
@@ -71,31 +70,31 @@
             </div>
           </div>
           <p class="note" id="agent-note">
-            Any agent that speaks ACP, or an OpenAI-compatible server.
+            任何支持 ACP 的智能体，或 OpenAI 兼容的服务器。
           </p>
 
-          <label class="mono" for="listen">LISTENING</label>
+          <label class="mono" for="listen">聆听</label>
           <select id="listen">
-            <option value="local">On this computer</option>
-            <option value="openai">OpenAI (your key)</option>
-            <option value="elevenlabs">ElevenLabs (your key)</option>
-            <option value="fake">None, for trying</option>
+            <option value="local">在这台电脑上</option>
+            <option value="openai">OpenAI（你的密钥）</option>
+            <option value="elevenlabs">ElevenLabs（你的密钥）</option>
+            <option value="fake">无，仅用于试用</option>
           </select>
           <p class="note" id="listen-note"></p>
 
-          <label class="mono" for="speak">SPEAKING</label>
+          <label class="mono" for="speak">说话</label>
           <select id="speak">
-            <option value="microsoft">Microsoft's voices (free, online)</option>
-            <option value="local">On this computer (private)</option>
-            <option value="system">A macOS voice</option>
-            <option value="openai">OpenAI (your key)</option>
-            <option value="elevenlabs">ElevenLabs (your key)</option>
-            <option value="fake">None, for trying</option>
+            <option value="microsoft">微软的声音（免费，在线）</option>
+            <option value="local">在这台电脑上（私密）</option>
+            <option value="system">macOS 的声音</option>
+            <option value="openai">OpenAI（你的密钥）</option>
+            <option value="elevenlabs">ElevenLabs（你的密钥）</option>
+            <option value="fake">无，仅用于试用</option>
           </select>
           <p class="note" id="speak-note"></p>
 
           <div id="ms-voice-row" hidden>
-            <span class="mono" id="ms-voice-label">ITS VOICE IN</span>
+            <span class="mono" id="ms-voice-label">它的声音（语言）</span>
             <select id="ms-voice-lang" aria-labelledby="ms-voice-label">
               <option value="en">English</option>
               <option value="it">Italiano</option>
@@ -103,15 +102,14 @@
               <option value="fr">Français</option>
               <option value="de">Deutsch</option>
               <option value="pt">Português</option>
+              <option value="zh">中文</option>
             </select>
-            <select id="ms-voice" aria-label="The voice"></select>
-            <p class="note">
-              It answers in the language you speak, each with its own voice.
-            </p>
+            <select id="ms-voice" aria-label="声音"></select>
+            <p class="note">它会用你说话的语言回答，每种语言都有自己的声音。</p>
           </div>
 
           <div id="key-row" hidden>
-            <label class="mono" for="openai-key">OPENAI KEY</label>
+            <label class="mono" for="openai-key">OPENAI 密钥</label>
             <div class="row">
               <input
                 id="openai-key"
@@ -119,41 +117,41 @@
                 spellcheck="false"
                 placeholder="sk-…"
               />
-              <button type="button" class="pill" id="save-key">Save</button>
+              <button type="button" class="pill" id="save-key">保存</button>
             </div>
           </div>
           <div id="elevenlabs-row" hidden>
-            <label class="mono" for="elevenlabs-key">ELEVENLABS KEY</label>
+            <label class="mono" for="elevenlabs-key">ELEVENLABS 密钥</label>
             <div class="row">
               <input
                 id="elevenlabs-key"
                 type="password"
                 spellcheck="false"
-                placeholder="Your key"
+                placeholder="你的密钥"
               />
               <button type="button" class="pill" id="save-elevenlabs-key">
-                Save
+                保存
               </button>
             </div>
           </div>
 
           <div id="elevenlabs-voice-row" hidden>
-            <label class="mono" for="elevenlabs-voice">ITS VOICE</label>
+            <label class="mono" for="elevenlabs-voice">它的声音</label>
             <div class="row">
               <select id="elevenlabs-voice"></select>
               <button type="button" class="pill ghost" id="try-elevenlabs">
-                Try it
+                试听
               </button>
             </div>
-            <select id="elevenlabs-model" aria-label="The ElevenLabs model">
-              <option value="">Balanced (v4 Turbo)</option>
-              <option value="eleven_flash_v2_5">Fastest (Flash v2.5)</option>
-              <option value="eleven_v4">Best quality (v4)</option>
+            <select id="elevenlabs-model" aria-label="ElevenLabs 模型">
+              <option value="">均衡（v4 Turbo）</option>
+              <option value="eleven_flash_v2_5">最快（Flash v2.5）</option>
+              <option value="eleven_v4">最佳质量（v4）</option>
             </select>
             <p class="note" id="elevenlabs-voice-note"></p>
           </div>
 
-          <label class="mono" for="language">LANGUAGE</label>
+          <label class="mono" for="language">语言</label>
           <select id="language">
             <option value="en">English</option>
             <option value="it">Italiano</option>
@@ -161,57 +159,55 @@
             <option value="fr">Français</option>
             <option value="de">Deutsch</option>
             <option value="pt">Português</option>
+            <option value="zh">中文</option>
           </select>
           <p class="note" id="voice-note">
-            It answers in the language you speak; this one is for when it can't
-            tell.
+            它会用你说话的语言回答；这项用于它听不出语言时。
           </p>
         </div>
       </section>
 
       <section class="look" aria-labelledby="look-title">
-        <span class="mono" id="look-title">YOUR CHARM</span>
+        <span class="mono" id="look-title">你的挂件</span>
         <p class="note" id="look-note"></p>
 
-        <label class="mono" for="charm-name">NAME</label>
+        <label class="mono" for="charm-name">名字</label>
         <input id="charm-name" maxlength="12" spellcheck="false" />
 
-        <span class="mono" id="colour-label">COLOUR</span>
+        <span class="mono" id="colour-label">颜色</span>
         <div id="colours"></div>
 
-        <label class="mono" for="greeting">GREETING</label>
+        <label class="mono" for="greeting">问候语</label>
         <input id="greeting" maxlength="40" />
-        <p class="note">What it says when it wakes up: one short line.</p>
+        <p class="note">它醒来时说的话：简短一行。</p>
 
         <div id="say-section">
-          <label class="mono" for="say-voice">ITS VOICE</label>
+          <label class="mono" for="say-voice">它的声音</label>
           <div class="row">
             <select id="say-voice"></select>
-            <button type="button" class="pill ghost" id="try">Try it</button>
+            <button type="button" class="pill ghost" id="try">试听</button>
           </div>
         </div>
 
-        <label class="mono" for="volume">VOLUME</label>
+        <label class="mono" for="volume">音量</label>
         <div class="row">
           <input type="range" id="volume" min="0" max="100" step="1" />
           <output class="mono" id="volume-value" for="volume"></output>
         </div>
 
-        <label class="mono" for="sleep">SLEEPS AFTER</label>
+        <label class="mono" for="sleep">多久后休眠</label>
         <select id="sleep">
-          <option value="2">2 minutes alone</option>
-          <option value="4">4 minutes alone</option>
-          <option value="10">10 minutes alone</option>
-          <option value="30">30 minutes alone</option>
-          <option value="0">Never</option>
+          <option value="2">独处 2 分钟后</option>
+          <option value="4">独处 4 分钟后</option>
+          <option value="10">独处 10 分钟后</option>
+          <option value="30">独处 30 分钟后</option>
+          <option value="0">从不</option>
         </select>
 
         <div class="switch-row">
           <div>
-            <span class="mono" id="calm-label">CALM MOTION</span>
-            <p class="note">
-              It breathes and blinks, but doesn't glance around.
-            </p>
+            <span class="mono" id="calm-label">安静动作</span>
+            <p class="note">它会呼吸和眨眼，但不会东张西望。</p>
           </div>
           <label class="switch">
             <input type="checkbox" id="calm" aria-labelledby="calm-label" />
@@ -221,12 +217,8 @@
 
         <div class="switch-row">
           <div>
-            <span class="mono" id="agent-look-label"
-              >LET THE AGENT CHANGE ITS LOOK</span
-            >
-            <p class="note">
-              Ask it to "make yourself blue". Until charmd restarts.
-            </p>
+            <span class="mono" id="agent-look-label">允许智能体改变外观</span>
+            <p class="note">让它“变成蓝色”试试。直到 charmd 重启前有效。</p>
           </div>
           <label class="switch">
             <input
@@ -240,27 +232,24 @@
       </section>
 
       <section>
-        <label class="mono" for="key">TALK KEY</label>
+        <label class="mono" for="key">说话键</label>
         <select id="key"></select>
         <p class="note">
-          Hold it in any app to talk. On an orange question, hold for yes, press
-          for no.
+          在任何应用中按住它说话。遇到橙色问题时，按住表示“是”，按下表示“否”。
         </p>
 
-        <label class="mono" for="type-key">TYPING KEY</label>
+        <label class="mono" for="type-key">打字键</label>
         <select id="type-key"></select>
         <p class="note">
-          Press it to type to your charm instead (also in the menu bar). The
-          reply comes as text.
+          按下它改为打字给挂件（菜单栏里也有）。回复会以文字显示。
         </p>
       </section>
 
       <section class="switch-row">
         <div>
-          <span class="mono">SPEAK REPLIES</span>
+          <span class="mono">朗读回复</span>
           <p class="note">
-            Off, replies show as text by the notch, for a quiet office. Also in
-            the menu bar.
+            关闭后，所有挂件（包括板子）的回复都以文字显示，适合安静的办公室。菜单栏里也有。
           </p>
         </div>
         <label class="switch">
@@ -271,10 +260,10 @@
 
       <section class="switch-row">
         <div>
-          <span class="mono">CHARMS ON THIS NETWORK</span>
+          <span class="mono">此网络上的挂件</span>
           <p class="note">
-            A charm you built connects to your agent through this app, over your
-            Wi-Fi (port 8787). Off: only this computer can reach it.
+            你做的挂件通过这个应用经 Wi-Fi（端口
+            8787）连接到你的智能体。关闭：只有这台电脑能连到它。
           </p>
         </div>
         <label class="switch">
@@ -285,7 +274,7 @@
       <section id="charms-section">
         <div class="row">
           <button type="button" class="pill small" id="add-charm">
-            Add a charm…
+            添加挂件…
           </button>
         </div>
         <ul class="charms" id="charms"></ul>
@@ -293,8 +282,8 @@
 
       <section class="switch-row">
         <div>
-          <span class="mono">START AT LOGIN</span>
-          <p class="note">Your charm is there when you are.</p>
+          <span class="mono">登录时启动</span>
+          <p class="note">你在，它就在。</p>
         </div>
         <label class="switch">
           <input type="checkbox" id="login" />
@@ -304,10 +293,9 @@
 
       <section class="switch-row">
         <div>
-          <span class="mono">CHECK FOR UPDATES</span>
+          <span class="mono">检查更新</span>
           <p class="note">
-            Once a day, from GitHub's public release list. Nothing is sent about
-            you.
+            每天一次，从 GitHub 的公开版本列表检查。不会发送任何关于你的信息。
           </p>
         </div>
         <label class="switch">
@@ -317,13 +305,13 @@
       </section>
 
       <details>
-        <summary class="mono">ADVANCED</summary>
+        <summary class="mono">高级</summary>
         <section class="switch-row">
           <div>
-            <span class="mono">ANOTHER CHARMD</span>
+            <span class="mono">另一个 charmd</span>
             <p class="note">
-              Connect to a charmd you run yourself (<code>opencharm serve</code
-              >) instead of the app's own.
+              连接到你自己运行的 charmd（<code>opencharm serve</code
+              >），而不是应用自带的。
             </p>
           </div>
           <label class="switch">
@@ -335,33 +323,28 @@
           <label class="mono" for="url">CHARMD</label>
           <div class="row">
             <input id="url" spellcheck="false" />
-            <button type="button" class="pill" id="check">Check</button>
+            <button type="button" class="pill" id="check">检查</button>
           </div>
           <p class="note" id="check-note">
-            Where <code>opencharm serve</code> runs. Usually this computer.
+            <code>opencharm serve</code> 运行的位置。通常就是这台电脑。
           </p>
         </section>
         <section>
-          <label class="mono" for="cli">OPENCHARM CLI</label>
-          <input
-            id="cli"
-            spellcheck="false"
-            placeholder="Found automatically"
-          />
+          <label class="mono" for="cli">OPENCHARM 命令行</label>
+          <input id="cli" spellcheck="false" placeholder="自动查找" />
           <p class="note">
-            Only if it isn't found: the full path of
-            <code>opencharm</code> (<code>command -v opencharm</code> in a
-            terminal).
+            仅在找不到时填写：<code>opencharm</code> 的完整路径（在终端里运行
+            <code>command -v opencharm</code>）。
           </p>
         </section>
         <section>
-          <span class="mono">PAIRING</span>
+          <span class="mono">配对</span>
           <div class="row">
             <p class="note grow">
-              Pair again. With the app's own charmd it pairs itself.
+              重新配对。使用应用自带的 charmd 时，它会自动配对。
             </p>
             <button type="button" class="pill ghost" id="forget">
-              Forget this charm
+              忘记这个挂件
             </button>
           </div>
         </section>
@@ -369,7 +352,7 @@
     </form>
 
     <footer class="mono dim">
-      <span id="status">ALL SAVED</span>
+      <span id="status">已保存</span>
       <span id="identity"></span>
     </footer>
     <script type="module" src="settings.js"></script>

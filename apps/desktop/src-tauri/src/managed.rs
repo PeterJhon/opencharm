@@ -305,7 +305,7 @@ fn agent_config(settings: &Settings, folder: &Folder) -> (Value, String) {
     match settings.agent.as_str() {
         "command" => {
             let command: Vec<&str> = settings.agent_command.split_whitespace().collect();
-            let name = command.first().copied().unwrap_or("agent").to_string();
+            let name = command.first().copied().unwrap_or("智能体").to_string();
             (
                 json!({ "adapter": "acp", "command": command, "cwd": cwd }),
                 name,
@@ -323,8 +323,8 @@ fn agent_config(settings: &Settings, folder: &Folder) -> (Value, String) {
             let mut agent = own.unwrap_or_default();
             let adapter = agent["adapter"].as_str().unwrap_or("").to_string();
             let name = match adapter.as_str() {
-                "acp" => agent["agent"].as_str().map_or("ACP agent".into(), label),
-                "" | "fake" => "a test agent".into(),
+                "acp" => agent["agent"].as_str().map_or("ACP 智能体".into(), label),
+                "" | "fake" => "测试智能体".into(),
                 other => label(other),
             };
             // charmd resolves paths from its own config's folder: make the workspace's absolute.
@@ -388,7 +388,7 @@ pub fn admin_path(data: &Path) -> PathBuf {
 /// charmd's config with another admin channel.
 pub fn with_admin(config: &str, admin: &str) -> Result<String, String> {
     let mut value: Value =
-        serde_json::from_str(config).map_err(|e| format!("charmd's config: {e}"))?;
+        serde_json::from_str(config).map_err(|e| format!("charmd 的配置：{e}"))?;
     value["adminSocket"] = json!(admin);
     serde_json::to_string_pretty(&value).map_err(|e| e.to_string())
 }
@@ -755,11 +755,11 @@ pub fn look_of(settings: &Settings, folder: Option<&Folder>) -> (Look, String) {
 /// elsewhere); the caller keeps it in the app's settings too.
 pub fn save_workspace_look(dir: &Path, look: &Look, say_voice: &str) -> Result<(), String> {
     let path = dir.join("opencharm.json");
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("opencharm.json: {e}"))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("opencharm.json：{e}"))?;
     let mut workspace: Value =
-        serde_json::from_str(&text).map_err(|e| format!("opencharm.json: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("opencharm.json：{e}"))?;
     let Some(root) = workspace.as_object_mut() else {
-        return Err("opencharm.json isn't an object".into());
+        return Err("opencharm.json 不是对象".into());
     };
     let block = match root.get("charm") {
         Some(Value::Object(block)) => block.clone(),
@@ -789,7 +789,7 @@ pub fn save_workspace_look(dir: &Path, look: &Look, say_voice: &str) -> Result<(
         }
     }
     let text = serde_json::to_string_pretty(&workspace).map_err(|e| e.to_string())?;
-    std::fs::write(&path, format!("{text}\n")).map_err(|e| format!("opencharm.json: {e}"))
+    std::fs::write(&path, format!("{text}\n")).map_err(|e| format!("opencharm.json：{e}"))
 }
 
 /// The login shell's environment, from `env -0` printed after a marker (rc files may print first).
@@ -1014,7 +1014,7 @@ impl Charmd {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("couldn't start {}: {e}", launch.cli.display()))?;
+            .map_err(|e| format!("无法启动 {}：{e}", launch.cli.display()))?;
         #[cfg(windows)]
         let job = job::Job::holding(&child);
         // charmd's output closes when it exits: that wakes this thread, so nothing polls meanwhile.

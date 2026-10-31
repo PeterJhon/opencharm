@@ -21,12 +21,12 @@ const BAD_CHARS = /[\\/:*?"<>|\u0000-\u001f]/;
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const SPEAK_NOTES = {
   microsoft:
-    "Natural voices, free and with no key. The text of each spoken reply goes to Microsoft, through an unofficial service that may stop; then it speaks with the voice on this computer.",
+    "自然的声音，免费且无需密钥。每条朗读回复的文字会通过一个非官方服务发送给微软，该服务可能停止；届时会用这台电脑上的声音朗读。",
   local:
-    "A voice on this computer: nothing leaves it, but it sounds less natural (about 130 MB the first time).",
-  system: "A voice from macOS. Nothing leaves this Mac.",
-  openai: "OpenAI's voices. The key stays in your keychain.",
-  fake: "No speaker: a soft tone stands in for speech. For trying.",
+    "使用这台电脑上的声音：什么都不离开它，但听起来没那么自然（首次约 130 MB）。",
+  system: "使用来自 macOS 的声音。什么都不离开这台 Mac。",
+  openai: "OpenAI 的声音。密钥保存在钥匙串中。",
+  fake: "不使用扬声器：用一声轻音代替说话。仅供试用。",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -83,13 +83,12 @@ let step = 1;
 let busy = false;
 
 function folderNameProblem(name) {
-  if (!name.trim()) return "Give it a name.";
-  if ([...name].length > 64) return "At most 64 characters.";
-  if (name === "." || name === "..") return "Choose another name.";
-  if (BAD_CHARS.test(name)) return "A name can't have / \\ : * ? \" < > |.";
-  if (/[. ]$/.test(name)) return "A name can't end with a dot or a space.";
-  if (RESERVED.test(name))
-    return "Windows keeps that name for itself: choose another.";
+  if (!name.trim()) return "给它起个名字。";
+  if ([...name].length > 64) return "最多 64 个字符。";
+  if (name === "." || name === "..") return "换一个名字。";
+  if (BAD_CHARS.test(name)) return '名字不能包含 / \\ : * ? " < > |。';
+  if (/[. ]$/.test(name)) return "名字不能以点或空格结尾。";
+  if (RESERVED.test(name)) return "Windows 保留了这个名字：请换一个。";
   return "";
 }
 
@@ -102,7 +101,7 @@ let agents = null;
 let agent = "";
 async function enterAgent() {
   if (agents) return;
-  note("agent-note", "Looking for your agents…");
+  note("agent-note", "正在查找你的智能体…");
   agents = await invoke("detect_agents");
   const found = new Set(agents.filter((a) => a.found).map((a) => a.id));
   const order = [
@@ -120,12 +119,12 @@ async function enterAgent() {
       "agent",
       id,
       label,
-      found.has(id) ? "Found" : "Not found · "
+      found.has(id) ? "已找到" : "未找到 · "
     );
     if (!found.has(id)) {
       const link = document.createElement("a");
       link.href = "#";
-      link.textContent = "How to install it";
+      link.textContent = "如何安装";
       link.addEventListener("click", (e) => {
         e.preventDefault();
         void invoke("open_install_page", { agent: id });
@@ -134,9 +133,7 @@ async function enterAgent() {
     }
     $("agents").append(row);
   }
-  $("agents").append(
-    choice("agent", "other", "Another agent", "A command, or a server")
-  );
+  $("agents").append(choice("agent", "other", "其他智能体", "命令或服务器"));
   const other = agent === "command" || agent === "server";
   $("agents").querySelector(`[value="${other ? "other" : agent}"]`).checked =
     true;
@@ -148,8 +145,8 @@ async function enterAgent() {
   note(
     "agent-note",
     found.size
-      ? "Sign-in isn't checked here: the last step tries it."
-      : "None found yet. Install one, then choose it here; or choose another agent."
+      ? "这里不检查登录：最后一步会实际试一次。"
+      : "还没有找到。安装一个后再在这里选择；或者选择其他智能体。"
   );
 }
 
@@ -181,7 +178,7 @@ $("other-kind").addEventListener("change", (e) => {
 
 async function saveAgent() {
   if (agent === "command" && !$("command").value.trim()) {
-    note("agent-note", "Type the command that starts your agent.", "bad");
+    note("agent-note", "输入启动智能体的命令。", "bad");
     $("command").focus();
     return false;
   }
@@ -189,7 +186,7 @@ async function saveAgent() {
     agent === "server" &&
     !($("server-url").value.trim() && $("server-model").value.trim())
   ) {
-    note("agent-note", "Type the server's address and the model.", "bad");
+    note("agent-note", "输入服务器地址和模型。", "bad");
     $("server-url").focus();
     return false;
   }
@@ -219,23 +216,21 @@ function showFolder() {
   const create = folderMode() === "create";
   $("create-form").hidden = !create;
   $("existing-form").hidden = create;
-  $("ws-location").textContent = location
-    ? shown(location)
-    : "Choose a location.";
+  $("ws-location").textContent = location ? shown(location) : "选择位置。";
   const name = $("ws-name").value;
   const problem = folderNameProblem(name);
   if (create) {
     note(
       "ws-target",
       problem ||
-        (location ? `Creates ${shown(joined(location, name.trim()))}` : ""),
+        (location ? `将创建 ${shown(joined(location, name.trim()))}` : ""),
       problem ? "bad" : ""
     );
     $("next").disabled = busy || Boolean(problem) || !location;
   } else {
     $("existing-path").textContent = existing
       ? shown(existing.path)
-      : "No folder chosen yet.";
+      : "还没有选择文件夹。";
     $("next").disabled = busy || !existing;
   }
   showSaved();
@@ -263,9 +258,9 @@ function showSaved() {
   note(
     "saved-note",
     state.refused
-      ? `macOS isn't letting OpenCharm open ${shown(state.refused)}. Allow it in System Settings → Privacy & Security → Files and Folders, then open the setup again; or choose another folder.`
+      ? `macOS 不允许 OpenCharm 打开 ${shown(state.refused)}。请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许它，然后重新打开设置；或选择另一个文件夹。`
       : state.missing
-        ? `${shown(state.missing)} isn't there any more.${again ? " Continue creates it again, a fresh copy of the starter." : ""}`
+        ? `${shown(state.missing)} 已经不在了。${again ? " 继续会重新创建它（一份新的起始模板副本）。" : ""}`
         : "",
     state.refused ? "bad" : ""
   );
@@ -279,7 +274,7 @@ $("ws-name").addEventListener("input", showFolder);
 $("browse").addEventListener("click", async () => {
   const path = await window.__TAURI__.dialog.open({
     directory: true,
-    title: "Where to create it",
+    title: "在哪里创建",
     defaultPath: location || undefined,
   });
   if (path) location = path;
@@ -288,19 +283,19 @@ $("browse").addEventListener("click", async () => {
 $("choose").addEventListener("click", async () => {
   const path = await window.__TAURI__.dialog.open({
     directory: true,
-    title: "Your agent's folder",
+    title: "你的智能体文件夹",
   });
   if (!path) return;
   existing = await invoke("inspect_folder", { path });
   note(
     "folder-note",
     existing.refused
-      ? "macOS isn't letting OpenCharm open it. Allow it in System Settings → Privacy & Security → Files and Folders, or choose another."
+      ? "macOS 不允许 OpenCharm 打开它。请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许，或选择另一个。"
       : existing.isWorkspace
-        ? `An OpenCharm workspace: ${existing.name}, as its opencharm.json says.`
+        ? `OpenCharm 工作区：${existing.name}，按其 opencharm.json 的设置。`
         : existing.empty
-          ? "An empty folder: a workspace will be created in it."
-          : "Your agent works in this folder, as it is."
+          ? "空文件夹：将在其中创建工作区。"
+          : "你的智能体就在这个文件夹里工作，保持原样。"
   );
   showFolder();
 });
@@ -319,7 +314,7 @@ async function saveFolder() {
   const chosen = { ...pick, agent: preset ? "" : pick.agent };
   const initAgent = preset ? pick.agent : "claude";
   let folder;
-  note("folder-note", "Creating your workspace (a copy of the starter)…");
+  note("folder-note", "正在创建工作区（起始模板的副本）…");
   react("thinking", 60000);
   try {
     const target = joined(location, $("ws-name").value.trim());
@@ -343,8 +338,8 @@ async function saveFolder() {
     ) {
       // Chosen earlier, gone or refused since (Back from the last step, say).
       throw existing.refused
-        ? "macOS isn't letting OpenCharm open that folder. Allow it in System Settings → Privacy & Security → Files and Folders, or choose another."
-        : "That folder isn't there any more: choose another.";
+        ? "macOS 不允许 OpenCharm 打开那个文件夹。请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许，或选择另一个。"
+        : "那个文件夹已经不在了：请选择另一个。";
     } else if (existing.empty) {
       await invoke("create_workspace", {
         folder: existing.path,
@@ -368,7 +363,7 @@ async function saveFolder() {
     return true;
   } catch (error) {
     note("folder-note", String(error), "bad");
-    $("next").textContent = "Try again";
+    $("next").textContent = "再试一次";
     react("sad", 2400);
     return false;
   }
@@ -388,7 +383,7 @@ async function enterLook() {
   look = loaded.look;
   sayVoice = loaded.sayVoice;
   $("look-name").value = look.name;
-  $("look-name").placeholder = loaded.defaultName.slice(0, 12) || "Charm";
+  $("look-name").placeholder = loaded.defaultName.slice(0, 12) || "挂件";
   showLook();
 }
 function showLook() {
@@ -419,14 +414,12 @@ async function saveLook(change) {
 // Step 5: the voice and the microphone (asked now, not in the middle of a first sentence).
 $("speak").querySelector('[value="system"]').hidden = !mac;
 const LISTEN_NOTES = {
-  local:
-    "It hears you on this computer: your voice never leaves it. The first time, it downloads about 490 MB.",
-  openai:
-    "OpenAI hears what you say (set in Settings). The key stays in your keychain.",
-  fake: "No microphone: it hears a test sentence (set in Settings). For trying.",
+  local: "它在这台电脑上听你说话：你的声音不会离开它。首次会下载约 490 MB。",
+  openai: "OpenAI 会听到你说的话（在设置中更改）。密钥保存在钥匙串中。",
+  fake: "不使用麦克风：它会听到一句测试话（在设置中更改）。仅供试用。",
 };
 // A voice chosen in Settings that the setup doesn't offer (OpenAI, none) is kept and shown.
-const OTHER_SPEAKS = { openai: "OpenAI (your key)", fake: "None, for trying" };
+const OTHER_SPEAKS = { openai: "OpenAI（你的密钥）", fake: "无，仅用于试用" };
 function enterVoice() {
   note("listen-note", LISTEN_NOTES[settings.listen] ?? LISTEN_NOTES.local);
   const current = settings.speak;
@@ -448,18 +441,14 @@ $("mic").addEventListener("click", async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     for (const track of stream.getTracks()) track.stop();
-    note(
-      "mic-note",
-      "The microphone is allowed. It listens only while you hold the key.",
-      "ok"
-    );
+    note("mic-note", "麦克风已允许。只有你按住按键时它才聆听。", "ok");
     react("joy");
   } catch {
     note(
       "mic-note",
       mac
-        ? "Not allowed. Turn it on in System Settings → Privacy & Security → Microphone."
-        : "Not allowed. Turn it on in Settings → Privacy → Microphone.",
+        ? "未允许。请在 系统设置 → 隐私与安全性 → 麦克风 中打开。"
+        : "未允许。请在 设置 → 隐私 → 麦克风 中打开。",
       "bad"
     );
     react("sad", 2000);
@@ -509,12 +498,12 @@ async function pollStatus() {
     if (noFolder)
       note(
         "try-note",
-        s.detail || "Your charm has no folder to work in: choose one.",
+        s.detail || "挂件没有可工作的文件夹：请选择一个。",
         "bad"
       );
     else if (stuck && s.detail) note("try-note", s.detail, "bad");
     else if (answered || turnFailed) return;
-    else if (s.state === "starting") note("try-note", "Waking it up…");
+    else if (s.state === "starting") note("try-note", "正在唤醒…");
     else if (s.state === "running") {
       // The first start downloads the voice models (about 600 MB); listening waits for them.
       const words = describeModels(await invoke("voice_progress"));
@@ -528,7 +517,7 @@ async function pollStatus() {
   }
 }
 function enterTry() {
-  $("next").textContent = "Done";
+  $("next").textContent = "完成";
   $("next").disabled = !answered;
   void pollStatus();
   clearInterval(polling);
@@ -539,7 +528,7 @@ await listen("charm-turn", ({ payload }) => {
   if (payload.kind === "answered") {
     answered = true;
     mark("check-answered", true);
-    note("try-note", "That's it: your charm is ready.", "ok");
+    note("try-note", "好了，你的挂件准备好了。", "ok");
     react("loved", 3000);
     $("finish").hidden = true;
     if (step === 6) $("next").disabled = false;
@@ -547,14 +536,14 @@ await listen("charm-turn", ({ payload }) => {
   if (payload.kind === "heard") turnFailed = false;
   if (payload.kind === "failed") {
     turnFailed = true;
-    note("try-note", payload.text || "Your agent didn't answer.", "bad");
+    note("try-note", payload.text || "你的智能体没有回答。", "bad");
     $("retry").hidden = false;
     react("sad", 2400);
   }
 });
 $("retry").addEventListener("click", async () => {
   await invoke("restart_charmd");
-  note("try-note", "Starting it again…");
+  note("try-note", "正在重新启动…");
   react("thinking", 2000);
 });
 $("refolder").addEventListener("click", () => {
@@ -599,7 +588,7 @@ async function show(n) {
     d.classList.toggle("on", i + 1 <= n)
   );
   $("back").style.visibility = n === 1 ? "hidden" : "visible";
-  $("next").textContent = "Continue";
+  $("next").textContent = "继续";
   if (n !== 6) clearInterval(polling);
   react("happy", 10);
   hold(true);

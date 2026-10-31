@@ -38,7 +38,7 @@ const TRAY_ICON: &[u8] = include_bytes!("../../../../brand/icon/tray-template.pn
 /// (measured with each step's longest content, an agent's server fields included).
 const SETUP_SIZE: (f64, f64) = (580.0, 760.0);
 const SETUP_MIN: (f64, f64) = (480.0, 520.0);
-const REFUSED: &str = "macOS isn't letting OpenCharm open that folder. Allow it in System Settings → Privacy & Security → Files and Folders, or choose another.";
+const REFUSED: &str = "macOS 不允许 OpenCharm 打开那个文件夹。请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许它，或选择另一个。";
 
 /// The menu-bar menu, to offer an update at its top.
 struct Tray {
@@ -152,7 +152,7 @@ fn offer_update(app: AppHandle, tray: State<Tray>, tags: Vec<String>) -> Option<
     let version = updates::newer(&app.package_info().version.to_string(), &tags)?;
     let mut offered = tray.offered.lock().unwrap();
     if offered.as_deref() != Some(version.as_str()) {
-        let label = format!("Update to {version}…");
+        let label = format!("更新到 {version}…");
         let item = MenuItem::with_id(&app, "update", label, true, None::<&str>).ok()?;
         if offered.is_some() {
             let _ = tray.menu.remove_at(0);
@@ -170,7 +170,7 @@ fn update_offered(tray: State<Tray>) -> Option<String> {
 
 #[tauri::command]
 fn open_release(app: AppHandle, version: String) -> Result<(), String> {
-    let page = updates::page(&version).ok_or("not a version")?;
+    let page = updates::page(&version).ok_or("版本号无效")?;
     app.opener()
         .open_url(page, None::<&str>)
         .map_err(|e| e.to_string())
@@ -218,7 +218,7 @@ impl Managed {
 /// app pair, type its PIN or drop the pairing.
 fn own_charmd(saved: &Saved, managed: &Managed, url: &str) -> Result<(), String> {
     if !is_managed(saved) || !managed::is_announced(&managed.charmd.status().url, url) {
-        return Err("not the app's own charmd".into());
+        return Err("不是应用自己的 charmd".into());
     }
     Ok(())
 }
@@ -315,11 +315,11 @@ fn own_admin(app: &AppHandle) -> Result<PathBuf, String> {
     let managed = app.state::<Managed>();
     if !app.state::<Saved>().settings.lock().unwrap().managed {
         return Err(
-            "Charms on this network need the app's own charmd (Settings → Advanced).".into(),
+            "“此网络上的挂件”需要应用自带的 charmd（设置 → 高级）。".into(),
         );
     }
     if managed.charmd.status().state != "running" {
-        return Err("charmd isn't running yet.".into());
+        return Err("charmd 还没有运行。".into());
     }
     Ok(managed.socket())
 }
@@ -399,7 +399,7 @@ async fn paired_charms(app: AppHandle) -> Result<Vec<serde_json::Value>, String>
 #[tauri::command]
 async fn remove_charm(app: AppHandle, name: String) -> Result<(), String> {
     if name == pairing::NAME {
-        return Err("That's the app's own charm.".into());
+        return Err("那是应用自带的挂件。".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
         admin_blocking(app, serde_json::json!({ "cmd": "revoke", "charm": name })).map(|_| ())
@@ -434,8 +434,19 @@ fn local_host_name() -> Option<String> {
 }
 
 #[tauri::command]
-fn open_add_charm(app: AppHandle) -> Result<(), String> {
+async fn open_add_charm(app: AppHandle) -> Result<(), String> {
     show_add_charm(&app).map_err(|e| e.to_string())
+}
+
+/// Windows' WebView2 deadlocks when a synchronous event handler creates another WebView. Commands
+/// that create one are async; tray events have to leave their handler for a plain thread instead.
+fn show_off_event_thread(app: &AppHandle, show: fn(&AppHandle) -> tauri::Result<()>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(error) = show(&app) {
+            eprintln!("[charm] a window didn't open: {error}");
+        }
+    });
 }
 
 /// The setup windows' height, kept inside the screen (a short laptop screen, or large text): what
@@ -455,7 +466,7 @@ fn show_add_charm(app: &AppHandle) -> tauri::Result<()> {
     }
     let window =
         WebviewWindowBuilder::new(app, "add-charm", WebviewUrl::App("add-charm.html".into()))
-            .title("Add a charm")
+            .title("添加挂件")
             .inner_size(SETUP_SIZE.0, setup_height(app))
             .min_inner_size(SETUP_MIN.0, SETUP_MIN.1)
             .center()
@@ -571,7 +582,7 @@ fn run_init(app: &AppHandle, folder: &std::path::Path, agent: &str) -> Result<()
             .trim()
             .lines()
             .last()
-            .unwrap_or("opencharm init failed")
+            .unwrap_or("opencharm init 失败")
             .to_string())
     }
 }
@@ -731,14 +742,14 @@ async fn create_new_workspace(
 /// An agent's install page, from the setup's agent step: only the ones setup.rs knows.
 #[tauri::command]
 fn open_install_page(app: AppHandle, agent: String) -> Result<(), String> {
-    let page = setup::install_page(&agent).ok_or("not an agent the setup offers")?;
+    let page = setup::install_page(&agent).ok_or("不是设置中提供的智能体")?;
     app.opener()
         .open_url(page, None::<&str>)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn open_setup(app: AppHandle) -> Result<(), String> {
+async fn open_setup(app: AppHandle) -> Result<(), String> {
     show_setup(&app).map_err(|e| e.to_string())
 }
 
@@ -748,7 +759,7 @@ fn show_setup(app: &AppHandle) -> tauri::Result<()> {
         return window.set_focus();
     }
     let window = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
-        .title("Set up OpenCharm")
+        .title("设置 OpenCharm")
         .inner_size(SETUP_SIZE.0, setup_height(app))
         .min_inner_size(SETUP_MIN.0, SETUP_MIN.1)
         .center()
@@ -780,7 +791,7 @@ fn cli_path(
     }
     managed::find_cli(env.get("PATH").map_or("", String::as_str))
         .map(managed::Cli::executable)
-        .ok_or_else(|| "opencharm isn't installed: npm install -g opencharm".to_string())
+        .ok_or_else(|| "没有找到 opencharm：请运行 npm install -g opencharm".to_string())
 }
 
 /// Start (or restart, or stop) the app's own charmd to match the settings. The login shell is asked
@@ -802,14 +813,14 @@ fn apply_managed(app: &AppHandle) {
             return off("off", "");
         }
         let Some(path) = settings.folder.clone() else {
-            return off("folder", "Choose your agent's folder.");
+            return off("folder", "选择你的智能体文件夹。");
         };
         let folder = managed::inspect_folder(&path);
         if folder.refused {
             return off("folder", REFUSED);
         }
         if !folder.exists {
-            return off("folder", "That folder is gone. Choose another.");
+            return off("folder", "那个文件夹不见了。请选择另一个。");
         }
         let mut env = managed.env();
         let cli = match cli_path(&app, &settings, &env) {
@@ -869,7 +880,7 @@ fn apply_managed(app: &AppHandle) {
             std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
         });
         if let Err(error) = written {
-            return off("missing", &format!("can't write charmd's config: {error}"));
+            return off("missing", &format!("无法写入 charmd 的配置：{error}"));
         }
         managed::stop_stale(&pid_file, &config_path);
         managed.charmd.start(
@@ -885,7 +896,7 @@ fn apply_managed(app: &AppHandle) {
                 note: if current {
                     String::new()
                 } else {
-                    "Your opencharm is older than this app: npm install -g opencharm for its new voice settings."
+                    "你的 opencharm 比这个应用旧：运行 npm install -g opencharm 获取新的声音设置。"
                         .into()
                 },
                 ..Status::default()
@@ -941,11 +952,11 @@ fn save_settings(app: AppHandle, saved: State<Saved>, next: Settings) -> Result<
     // the settings are saved, so a failed save never leaves a key doing the other key's job.
     let shortcuts = app.global_shortcut();
     let changed: Vec<(&str, &str, &str)> = [
-        (next.key.as_str(), previous.key.as_str(), "that key"),
+        (next.key.as_str(), previous.key.as_str(), "那个按键"),
         (
             next.type_key.as_str(),
             previous.type_key.as_str(),
-            "that typing key",
+            "那个打字键",
         ),
     ]
     .into_iter()
@@ -957,7 +968,7 @@ fn save_settings(app: AppHandle, saved: State<Saved>, next: Settings) -> Result<
             for done in registered {
                 let _ = shortcuts.unregister(done);
             }
-            return Err(format!("{what} can't be used: {e}"));
+            return Err(format!("{what}无法使用：{e}"));
         }
         registered.push(*new);
     }
@@ -1096,7 +1107,7 @@ fn forget_pairing(app: AppHandle) {
 }
 
 #[tauri::command]
-fn open_settings(app: AppHandle) -> Result<(), String> {
+async fn open_settings(app: AppHandle) -> Result<(), String> {
     show_settings(&app).map_err(|e| e.to_string())
 }
 
@@ -1308,18 +1319,18 @@ pub fn run() {
             }
 
             let settings_item =
-                MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
-            let quit = MenuItem::with_id(app, "quit", "Quit OpenCharm", true, Some("CmdOrCtrl+Q"))?;
-            let setup_item = MenuItem::with_id(app, "setup", "Set up again…", true, None::<&str>)?;
-            let add_item = MenuItem::with_id(app, "add-charm", "Add a charm…", true, None::<&str>)?;
+                MenuItem::with_id(app, "settings", "设置…", true, Some("CmdOrCtrl+,"))?;
+            let quit = MenuItem::with_id(app, "quit", "退出 OpenCharm", true, Some("CmdOrCtrl+Q"))?;
+            let setup_item = MenuItem::with_id(app, "setup", "重新设置…", true, None::<&str>)?;
+            let add_item = MenuItem::with_id(app, "add-charm", "添加挂件…", true, None::<&str>)?;
             let speak_on = app.state::<Saved>().settings.lock().unwrap().speak_replies;
-            let type_item = MenuItem::with_id(app, "type", "Type to your charm…", true, None::<&str>)?;
+            let type_item = MenuItem::with_id(app, "type", "打字给你的挂件…", true, None::<&str>)?;
             let new_item =
-                MenuItem::with_id(app, "new-conversation", "New conversation", true, None::<&str>)?;
+                MenuItem::with_id(app, "new-conversation", "新对话", true, None::<&str>)?;
             let speak_item = CheckMenuItem::with_id(
                 app,
                 "speak",
-                "Speak replies",
+                "朗读回复",
                 true,
                 speak_on,
                 None::<&str>,
@@ -1347,13 +1358,13 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "settings" => {
-                        let _ = show_settings(app);
+                        show_off_event_thread(app, show_settings);
                     }
                     "setup" => {
-                        let _ = show_setup(app);
+                        show_off_event_thread(app, show_setup);
                     }
                     "add-charm" => {
-                        let _ = show_add_charm(app);
+                        show_off_event_thread(app, show_add_charm);
                     }
                     "update" => {
                         let offered = app.state::<Tray>().offered.lock().unwrap().clone();

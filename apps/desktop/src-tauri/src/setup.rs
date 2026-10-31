@@ -36,21 +36,21 @@ pub fn resume_step(settings: &Settings, folder_ok: bool) -> u32 {
 /// Why a folder can't have this name on some OS, or None when every OS can keep it.
 pub fn folder_name_problem(name: &str) -> Option<&'static str> {
     if name.trim().is_empty() {
-        return Some("Give it a name.");
+        return Some("给它起个名字。");
     }
     if name.chars().count() > MAX_NAME {
-        return Some("At most 64 characters.");
+        return Some("最多 64 个字符。");
     }
     if name == "." || name == ".." {
-        return Some("Choose another name.");
+        return Some("换一个名字。");
     }
     if name.chars().any(|c| {
         c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
     }) {
-        return Some("A name can't have / \\ : * ? \" < > |.");
+        return Some("名字不能包含 / \\ : * ? \" < > |。");
     }
     if name.ends_with('.') || name.ends_with(' ') {
-        return Some("A name can't end with a dot or a space.");
+        return Some("名字不能以点或空格结尾。");
     }
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     let numbered = |prefix: &str| {
@@ -58,7 +58,7 @@ pub fn folder_name_problem(name: &str) -> Option<&'static str> {
             .is_some_and(|n| n.len() == 1 && n.chars().all(|c| ('1'..='9').contains(&c)))
     };
     if RESERVED.contains(&stem.as_str()) || numbered("COM") || numbered("LPT") {
-        return Some("Windows keeps that name for itself: choose another.");
+        return Some("Windows 保留了这个名字：请换一个。");
     }
     None
 }
@@ -69,7 +69,7 @@ pub fn new_workspace_target(location: &Path, name: &str) -> Result<PathBuf, Stri
         return Err(problem.to_string());
     }
     if !location.is_dir() {
-        return Err("That location isn't there any more: choose another.".into());
+        return Err("那个位置已经不在了：请选择另一个。".into());
     }
     let target = location.join(name);
     if target.exists() {
@@ -77,7 +77,7 @@ pub fn new_workspace_target(location: &Path, name: &str) -> Result<PathBuf, Stri
             && std::fs::read_dir(&target).is_ok_and(|mut entries| entries.next().is_none());
         if !empty {
             return Err(
-                "There's already something there with that name: choose another name.".into(),
+                "那里已经有同名内容：请换一个名字。".into(),
             );
         }
     }
@@ -130,11 +130,11 @@ pub fn window_height(wanted: f64, min: f64, screen: Option<f64>) -> f64 {
 pub fn explain(error: &std::io::Error) -> String {
     if error.kind() == std::io::ErrorKind::PermissionDenied {
         let place = if cfg!(target_os = "macos") {
-            "Allow it in System Settings → Privacy & Security → Files and Folders, or choose another location."
+            "请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许它，或选择另一个位置。"
         } else {
-            "Choose another location."
+            "选择另一个位置。"
         };
-        return format!("OpenCharm isn't allowed to create a folder there. {place}");
+        return format!("OpenCharm 不允许在那里创建文件夹。{place}");
     }
     error.to_string()
 }
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn a_refused_folder_says_where_to_allow_it() {
         let refused = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
-        assert!(explain(&refused).starts_with("OpenCharm isn't allowed to create a folder there."));
+        assert!(explain(&refused).starts_with("OpenCharm 不允许在那里创建文件夹。"));
         let other = std::io::Error::other("disk full");
         assert_eq!(explain(&other), "disk full");
     }

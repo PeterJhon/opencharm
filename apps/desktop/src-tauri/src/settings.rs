@@ -35,7 +35,7 @@ const SPEAKS: [&str; 6] = [
     "fake",
 ];
 /// The languages charmd tells apart and has a Microsoft voice for (`packages/charmd/src/voice`).
-const LANGUAGES: [&str; 6] = ["en", "it", "es", "fr", "de", "pt"];
+const LANGUAGES: [&str; 7] = ["en", "it", "es", "fr", "de", "pt", "zh"];
 /// The six identity colours (`packages/design/faces.json`); orange is never one of them. A colour of
 /// your own is `#RRGGBB`.
 pub const COLOURS: [&str; 6] = ["white", "cobalt", "lime", "lilac", "sun", "coal"];
@@ -74,7 +74,7 @@ fn own_colour_problem(colour: &str) -> Result<(), String> {
         .strip_prefix('#')
         .filter(|hex| hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()));
     let Some(hex) = hex else {
-        return Err("choose a colour, or type one as #RRGGBB".into());
+        return Err("选择一种颜色，或按 #RRGGBB 输入".into());
     };
     let channel = |at: usize| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap()) / 255.0;
     let (r, g, b) = (channel(0), channel(2), channel(4));
@@ -86,7 +86,7 @@ fn own_colour_problem(colour: &str) -> Result<(), String> {
         }
     };
     if 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) < 0.05 {
-        return Err("that colour is too dark to see on black".into());
+        return Err("这个颜色太暗，在黑色上看不清".into());
     }
     let max = r.max(g).max(b);
     let spread = max - r.min(g).min(b);
@@ -94,7 +94,7 @@ fn own_colour_problem(colour: &str) -> Result<(), String> {
         let hue = 60.0 * (g - b) / spread;
         if (6.0..=40.0).contains(&hue) {
             return Err(
-                "that colour is too close to the orange that means \"it needs you\"".into(),
+                "这个颜色太接近橙色（橙色只表示“它需要你”）".into(),
             );
         }
     }
@@ -135,22 +135,22 @@ impl Look {
     /// The limits of charmd's config and of `charm:look` (packages/protocol).
     pub fn valid(&self) -> Result<(), String> {
         if self.name.chars().count() > 12 || self.name.len() > 24 {
-            return Err("the name is up to 12 characters".into());
+            return Err("名字最多 12 个字符".into());
         }
         if !COLOURS.contains(&self.colour.as_str()) {
             own_colour_problem(&self.colour)?;
         }
         if self.greeting.len() > 40 {
-            return Err("the greeting is too long".into());
+            return Err("问候语太长了".into());
         }
         if self.sleep_after_minutes > 1440 {
-            return Err("sleep after up to a day".into());
+            return Err("休眠时间最多一天".into());
         }
         if !MOTIONS.contains(&self.motion.as_str()) {
-            return Err("choose full or calm motion".into());
+            return Err("选择完整或安静动作".into());
         }
         if self.volume > 100 {
-            return Err("the volume is up to 100".into());
+            return Err("音量最大为 100".into());
         }
         Ok(())
     }
@@ -320,54 +320,54 @@ impl Settings {
     /// Only a WebSocket address; the charm never talks to anything else.
     pub fn valid(&self) -> Result<(), String> {
         if !(self.url.starts_with("ws://") || self.url.starts_with("wss://")) {
-            return Err("charmd's address starts with ws:// or wss://".into());
+            return Err("charmd 的地址以 ws:// 或 wss:// 开头".into());
         }
         if self.key.trim().is_empty() {
-            return Err("choose a talk key".into());
+            return Err("选择一个说话键".into());
         }
         if !self.elevenlabs_voice.is_empty() && !elevenlabs_voice_ok(&self.elevenlabs_voice) {
-            return Err("an ElevenLabs voice ID is letters and digits".into());
+            return Err("ElevenLabs 声音 ID 只能包含字母和数字".into());
         }
         if !ELEVENLABS_MODELS.contains(&self.elevenlabs_model.as_str()) {
-            return Err("choose one of the ElevenLabs models offered".into());
+            return Err("请从提供的 ElevenLabs 模型中选择".into());
         }
         if self.type_key.trim().is_empty() || self.type_key == self.key {
-            return Err("choose a typing key other than the talk key".into());
+            return Err("打字键不能和说话键相同".into());
         }
         if !LISTENS.contains(&self.listen.as_str())
             || !SPEAKS.contains(&self.speak.as_str())
             || (self.speak == "system" && !cfg!(target_os = "macos"))
         {
-            return Err("choose a voice".into());
+            return Err("选择一个声音".into());
         }
         if !LANGUAGES.contains(&self.language.as_str()) {
-            return Err("choose a language".into());
+            return Err("选择一种语言".into());
         }
         if !self
             .microsoft_voices
             .iter()
             .all(|(language, voice)| microsoft_voice_ok(language, voice))
         {
-            return Err("choose a Microsoft voice from the list".into());
+            return Err("请从列表中选择微软的声音".into());
         }
         match self.agent.as_str() {
             "" => {}
             "command" if self.agent_command.split_whitespace().next().is_none() => {
-                return Err("type the agent's command".into())
+                return Err("输入智能体的命令".into())
             }
             "command" => {}
             "server" => {
                 if !(self.server_url.starts_with("http://")
                     || self.server_url.starts_with("https://"))
                 {
-                    return Err("the agent's address starts with http:// or https://".into());
+                    return Err("智能体地址以 http:// 或 https:// 开头".into());
                 }
                 if self.server_model.trim().is_empty() {
-                    return Err("type the agent's model".into());
+                    return Err("输入智能体的模型".into());
                 }
             }
             name if PRESETS.contains(&name) => {}
-            _ => return Err("choose an agent".into()),
+            _ => return Err("选择一个智能体".into()),
         }
         self.look.valid()
     }

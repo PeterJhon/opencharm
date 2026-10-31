@@ -25,7 +25,7 @@ fn entry(account: &str) -> Result<keyring::Entry, String> {
     } else {
         SERVICE
     };
-    keyring::Entry::new(service, account).map_err(|e| format!("the keychain: {e}"))
+    keyring::Entry::new(service, account).map_err(|e| format!("钥匙串：{e}"))
 }
 
 /// A secret from the keychain, or None when there is none.
@@ -33,7 +33,7 @@ pub fn secret(account: &str) -> Result<Option<String>, String> {
     match entry(account)?.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("the keychain: {e}")),
+        Err(e) => Err(format!("钥匙串：{e}")),
     }
 }
 
@@ -48,7 +48,7 @@ pub fn set_secret(account: &str, value: &str) -> Result<(), String> {
     } else {
         entry.set_password(value)
     };
-    result.map_err(|e| format!("the keychain: {e}"))
+    result.map_err(|e| format!("钥匙串：{e}"))
 }
 
 /// 12 random digits (charmd's longest PIN). Bytes of 250 and up are skipped, so every digit is
@@ -74,12 +74,12 @@ pub fn pin(dir: &Path) -> Result<String, String> {
     }
     let pin = loop {
         let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes).map_err(|e| format!("no random source: {e}"))?;
+        getrandom::fill(&mut bytes).map_err(|e| format!("没有随机源：{e}"))?;
         if let Some(pin) = new_pin(&bytes) {
             break pin;
         }
     };
-    write_private(dir, &path, &pin).map_err(|e| format!("the PIN file: {e}"))?;
+    write_private(dir, &path, &pin).map_err(|e| format!("PIN 文件：{e}"))?;
     Ok(pin)
 }
 
@@ -113,15 +113,15 @@ pub fn admin(socket: &Path, request: &Value) -> Result<Value, String> {
 pub fn admin_within(socket: &Path, request: &Value, timeout: Duration) -> Result<Value, String> {
     #[cfg(unix)]
     let mut stream =
-        std::os::unix::net::UnixStream::connect(socket).map_err(|e| format!("charmd: {e}"))?;
+        std::os::unix::net::UnixStream::connect(socket).map_err(|e| format!("charmd：{e}"))?;
     #[cfg(unix)]
     {
         stream
             .set_read_timeout(Some(timeout))
-            .map_err(|e| format!("charmd: {e}"))?;
+            .map_err(|e| format!("charmd：{e}"))?;
         stream
             .set_write_timeout(Some(timeout))
-            .map_err(|e| format!("charmd: {e}"))?;
+            .map_err(|e| format!("charmd：{e}"))?;
     }
     #[cfg(windows)]
     let _ = timeout;
@@ -130,15 +130,15 @@ pub fn admin_within(socket: &Path, request: &Value, timeout: Duration) -> Result
         .read(true)
         .write(true)
         .open(socket)
-        .map_err(|e| format!("charmd: {e}"))?;
+        .map_err(|e| format!("charmd：{e}"))?;
     stream
         .write_all(format!("{request}\n").as_bytes())
-        .map_err(|e| format!("charmd: {e}"))?;
+        .map_err(|e| format!("charmd：{e}"))?;
     let mut reply = String::new();
     stream
         .take(256 * 1024)
         .read_to_string(&mut reply)
-        .map_err(|e| format!("charmd: {e}"))?;
+        .map_err(|e| format!("charmd：{e}"))?;
     let reply: Value =
         serde_json::from_str(&reply).map_err(|_| "charmd sent an unreadable reply".to_string())?;
     if reply["ok"] == json!(true) {

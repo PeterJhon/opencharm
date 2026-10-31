@@ -52,16 +52,16 @@ const AGENTS = [
   ["goose", "goose"],
   ["hermes", "Hermes"],
   ["openclaw", "OpenClaw"],
-  ["command", "Another ACP agent (a command)"],
-  ["server", "A server (OpenAI-compatible)"],
+  ["command", "其他 ACP 智能体（命令）"],
+  ["server", "服务器（OpenAI 兼容）"],
 ];
 const STATES = {
-  running: ["running", "Talking to charmd. Hold the key and talk."],
-  starting: ["starting", "Starting charmd…"],
-  restarting: ["needs", "charmd stopped; starting it again."],
+  running: ["running", "正在与 charmd 通信。按住按键说话。"],
+  starting: ["starting", "正在启动 charmd…"],
+  restarting: ["needs", "charmd 已停止，正在重新启动。"],
   folder: ["needs", ""],
   missing: ["needs", ""],
-  off: ["", "Using another charmd (Advanced)."],
+  off: ["", "正在使用另一个 charmd（高级）。"],
 };
 
 let settings = await invoke("get_settings");
@@ -103,8 +103,7 @@ function fill() {
 
   // A workspace may keep its own agent ("as the workspace says"); any other folder picks one.
   $("agent").replaceChildren();
-  if (folder?.isWorkspace)
-    $("agent").append(new Option("As the workspace says", ""));
+  if (folder?.isWorkspace) $("agent").append(new Option("按工作区设置", ""));
   for (const [value, label] of AGENTS)
     $("agent").append(new Option(label, value));
   $("agent").value = settings.agent || (folder?.isWorkspace ? "" : "claude");
@@ -118,23 +117,21 @@ function fill() {
   $("elevenlabs-model").value = settings.elevenlabsModel ?? "";
   fillElevenLabsVoices();
   $("listen-note").textContent = {
-    local:
-      "Understood on this computer: your voice never leaves it. The first start downloads about 490 MB.",
-    openai: "OpenAI hears what you say. The key stays in your keychain.",
-    elevenlabs:
-      "ElevenLabs hears what you say. The key stays in your keychain.",
-    fake: "No microphone: the charm hears a test sentence. For trying.",
+    local: "在这台电脑上识别：你的声音不会离开它。首次启动会下载约 490 MB。",
+    openai: "OpenAI 会听到你说的话。密钥保存在钥匙串中。",
+    elevenlabs: "ElevenLabs 会听到你说的话。密钥保存在钥匙串中。",
+    fake: "不使用麦克风：挂件会听到一句测试话。仅供试用。",
   }[settings.listen];
   $("speak-note").textContent = {
     microsoft:
-      "Natural voices, free and with no key. The text of each spoken reply goes to Microsoft, through an unofficial service that may stop; then it speaks with the voice on this computer.",
+      "自然的声音，免费且无需密钥。每条朗读回复的文字会通过一个非官方服务发送给微软，该服务可能停止；届时会用这台电脑上的声音朗读。",
     local:
-      "A voice on this computer: nothing leaves it, but it sounds less natural (about 130 MB the first time).",
-    system: "The voice below, from macOS. Nothing leaves this Mac.",
-    openai: "OpenAI's voices. The key stays in your keychain.",
+      "使用这台电脑上的声音：什么都不离开它，但听起来没那么自然（首次约 130 MB）。",
+    system: "使用下方来自 macOS 的声音。什么都不离开这台 Mac。",
+    openai: "OpenAI 的声音。密钥保存在钥匙串中。",
     elevenlabs:
-      "ElevenLabs' voices: the text of each spoken reply goes to ElevenLabs. The key stays in your keychain.",
-    fake: "No speaker: a soft tone stands in for speech. For trying.",
+      "ElevenLabs 的声音：每条朗读回复的文字会发送给 ElevenLabs。密钥保存在钥匙串中。",
+    fake: "不使用扬声器：用一声轻音代替说话。仅供试用。",
   }[settings.speak];
 
   fillMicrosoftVoice();
@@ -143,19 +140,19 @@ function fill() {
   $("create").hidden = !(folder?.exists && folder.empty);
   if (!folder) {
     note.textContent =
-      "An OpenCharm workspace (like Momo), or any folder your agent should work in.";
+      "OpenCharm 工作区（例如 Momo），或任何你想让智能体工作的文件夹。";
   } else if (folder.refused) {
     note.textContent =
-      "macOS isn't letting OpenCharm open that folder. Allow it in System Settings → Privacy & Security → Files and Folders, or choose another.";
+      "macOS 不允许 OpenCharm 打开那个文件夹。请在 系统设置 → 隐私与安全性 → 文件和文件夹 中允许它，或选择另一个。";
   } else if (!folder.exists) {
-    note.textContent = "That folder is gone. Choose another.";
+    note.textContent = "那个文件夹不见了。请选择另一个。";
   } else if (folder.isWorkspace) {
-    note.textContent = `An OpenCharm workspace: ${folder.name}, as its opencharm.json says.`;
+    note.textContent = `OpenCharm 工作区：${folder.name}，按其 opencharm.json 的设置。`;
   } else if (folder.empty) {
     note.textContent =
-      "An empty folder. Create a workspace here (a copy of the starter), or choose another.";
+      "空文件夹。在这里创建工作区（起始模板的副本），或选择另一个。";
   } else {
-    note.textContent = "Your agent works in this folder, as it is.";
+    note.textContent = "你的智能体就在这个文件夹里工作，保持原样。";
   }
 }
 
@@ -178,15 +175,15 @@ async function loadElevenLabsVoices(charmdState) {
   try {
     elevenLabsVoices = await invoke("elevenlabs_voices");
     $("elevenlabs-voice-note").textContent = elevenLabsVoices.length
-      ? "The voices in your ElevenLabs account. Try it plays ElevenLabs' sample."
-      : "Your ElevenLabs account has no voices yet: add one on elevenlabs.io.";
+      ? "你 ElevenLabs 账户中的声音。试听播放的是 ElevenLabs 自己的样本。"
+      : "你的 ElevenLabs 账户还没有声音：请到 elevenlabs.io 添加。";
   } catch (error) {
     elevenLabsVoices = [];
     // Asked again on a later poll, not stuck on one failure.
     setTimeout(() => (elevenLabsAsked = false), 10_000);
     $("elevenlabs-voice-note").textContent = /401|403/.test(String(error))
-      ? "ElevenLabs refused the key: save it again below."
-      : "Couldn't get your ElevenLabs voices just now; trying again shortly.";
+      ? "ElevenLabs 拒绝了密钥：请在下面重新保存。"
+      : "暂时无法获取你的 ElevenLabs 声音，稍后会重试。";
   }
   fillElevenLabsVoices();
 }
@@ -194,7 +191,7 @@ async function loadElevenLabsVoices(charmdState) {
 function fillElevenLabsVoices() {
   const select = $("elevenlabs-voice");
   const saved = settings.elevenlabsVoice ?? "";
-  select.replaceChildren(new Option("Your first voice", ""));
+  select.replaceChildren(new Option("你的第一个声音", ""));
   for (const voice of elevenLabsVoices)
     select.append(
       new Option(
@@ -212,11 +209,11 @@ async function save(change) {
   const next = { ...settings, ...change };
   // A change may restart charmd: its voices are asked again from the new one.
   elevenLabsAsked = false;
-  status.textContent = "SAVING…";
+  status.textContent = "保存中…";
   try {
     await invoke("save_settings", { next });
     settings = next;
-    status.textContent = "SAVED";
+    status.textContent = "已保存";
     react("joy");
   } catch (error) {
     status.textContent = String(error).toUpperCase();
@@ -245,7 +242,7 @@ function fillMicrosoftVoice() {
     select.append(new Option(saved, saved));
   for (const [name, label] of list)
     select.append(
-      new Option(name === fallback ? `${label} (default)` : label, name)
+      new Option(name === fallback ? `${label}（默认）` : label, name)
     );
   select.value = saved ?? fallback ?? "";
 }
@@ -277,10 +274,10 @@ async function poll() {
     $("dot").className = `dot ${dot}`;
     $("who").textContent =
       s.state === "off"
-        ? "Another charmd"
+        ? "另一个 charmd"
         : s.name
           ? `${s.name} · ${s.agent}`
-          : "No agent yet";
+          : "还没有智能体";
     $("where").textContent =
       s.state === "off" ? settings.url : home(s.folder || "");
     const note = $("state-note");
@@ -310,20 +307,20 @@ let voices = [];
 function fillLook() {
   const { look, sayVoice, inWorkspace, defaultName } = charmLook;
   $("look-note").textContent = inWorkspace
-    ? "Saved in the workspace's opencharm.json, so every charm of it agrees."
-    : "Saved in this app. A workspace keeps its own.";
+    ? "保存在工作区的 opencharm.json 中，工作区里的每个挂件都一致。"
+    : "保存在这个应用中。工作区会保留自己的设置。";
   $("charm-name").value = look.name;
-  $("charm-name").placeholder = defaultName.slice(0, 12) || "Charm";
+  $("charm-name").placeholder = defaultName.slice(0, 12) || "挂件";
   const name = look.name || $("charm-name").placeholder;
   $("greeting").value = look.greeting;
-  $("greeting").placeholder = `Hi! I'm ${name}.`;
+  $("greeting").placeholder = `嗨！我是 ${name}。`;
   picker.set(look.colour);
   const minutes = String(look.sleepAfterMinutes);
   if (
     !SLEEPS.includes(minutes) &&
     !$("sleep").querySelector(`[value="${minutes}"]`)
   )
-    $("sleep").append(new Option(`${minutes} minutes alone`, minutes));
+    $("sleep").append(new Option(`独处 ${minutes} 分钟后`, minutes));
   $("sleep").value = minutes;
   $("volume").value = String(look.volume);
   $("volume-value").textContent = `${look.volume}%`;
@@ -343,14 +340,14 @@ async function saveLook(change, voice) {
   const look = { ...charmLook.look, ...change };
   const sayVoice = voice ?? charmLook.sayVoice;
   if (new TextEncoder().encode(look.greeting).length > 40) {
-    status.textContent = "THE GREETING IS TOO LONG";
+    status.textContent = "问候语太长了";
     return react("oops", 2200);
   }
-  status.textContent = "SAVING…";
+  status.textContent = "保存中…";
   try {
     await invoke("save_look", { look, sayVoice });
     charmLook = { ...charmLook, look, sayVoice };
-    status.textContent = "SAVED";
+    status.textContent = "已保存";
     react("joy");
   } catch (error) {
     status.textContent = String(error).toUpperCase();
@@ -375,10 +372,10 @@ const language = navigator.language.split("-")[0].toLowerCase();
 const mine = voices.filter((v) => v.locale.split("_")[0] === language);
 const others = voices.filter((v) => v.locale.split("_")[0] !== language);
 // Empty means charmd's default, Samantha: English, whatever the system language.
-$("say-voice").append(new Option("Samantha · English (default)", ""));
+$("say-voice").append(new Option("Samantha · English（默认）", ""));
 for (const [label, list] of [
-  ["Your language", mine],
-  ["Other languages", others],
+  ["你的语言", mine],
+  ["其他语言", others],
 ]) {
   if (list.length === 0) continue;
   const group = document.createElement("optgroup");
@@ -479,21 +476,21 @@ async function showCharms() {
       const li = document.createElement("li");
       const label = document.createElement("span");
       const b = c.battery;
-      label.textContent = `${c.name} · ${c.connected ? c.state : "offline"}${
-        b ? ` · ${b.percent}%${b.charging ? " charging" : ""}` : ""
+      label.textContent = `${c.name} · ${c.connected ? c.state : "离线"}${
+        b ? ` · ${b.percent}%${b.charging ? " 充电中" : ""}` : ""
       }`;
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "pill ghost small";
-      remove.textContent = "Remove";
+      remove.textContent = "移除";
       // Two clicks: the app's web view answers confirm() with "no" without showing it.
       remove.addEventListener("click", async () => {
         if (remove.dataset.sure !== "1") {
           remove.dataset.sure = "1";
-          remove.textContent = "Remove: sure?";
+          remove.textContent = "移除：确定？";
           setTimeout(() => {
             remove.dataset.sure = "";
-            remove.textContent = "Remove";
+            remove.textContent = "移除";
           }, 4000);
           return;
         }
@@ -532,7 +529,7 @@ $("choose").addEventListener("click", async () => {
   react("thinking", 30000);
   const path = await window.__TAURI__.dialog.open({
     directory: true,
-    title: "Your agent's folder",
+    title: "你的智能体文件夹",
     defaultPath: settings.folder ?? undefined,
   });
   if (!path) return react("happy", 10);
@@ -547,7 +544,7 @@ $("choose").addEventListener("click", async () => {
 $("create").addEventListener("click", async () => {
   const button = $("create");
   button.disabled = true;
-  button.textContent = "Creating…";
+  button.textContent = "创建中…";
   react("thinking", 60000);
   try {
     const agent = settings.agent || "claude";
@@ -561,7 +558,7 @@ $("create").addEventListener("click", async () => {
     react("sad", 2400);
   } finally {
     button.disabled = false;
-    button.textContent = "Create a workspace here";
+    button.textContent = "在这里创建工作区";
   }
 });
 
@@ -595,13 +592,13 @@ for (const id of ["server-url", "server-model"])
 for (const id of ["listen", "speak", "language"])
   $(id).addEventListener("change", (e) => void save({ [id]: e.target.value }));
 if (await invoke("has_openai_key"))
-  $("openai-key").placeholder = "Saved in your keychain";
+  $("openai-key").placeholder = "已保存在钥匙串中";
 $("save-key").addEventListener("click", async () => {
   try {
     await invoke("set_openai_key", { key: $("openai-key").value });
     $("openai-key").value = "";
-    $("openai-key").placeholder = "Saved in your keychain";
-    status.textContent = "KEY SAVED";
+    $("openai-key").placeholder = "已保存在钥匙串中";
+    status.textContent = "密钥已保存";
     react("joy");
   } catch (error) {
     status.textContent = String(error).toUpperCase();
@@ -610,14 +607,14 @@ $("save-key").addEventListener("click", async () => {
 });
 
 if (await invoke("has_elevenlabs_key"))
-  $("elevenlabs-key").placeholder = "Saved in your keychain";
+  $("elevenlabs-key").placeholder = "已保存在钥匙串中";
 $("save-elevenlabs-key").addEventListener("click", async () => {
   try {
     await invoke("set_elevenlabs_key", { key: $("elevenlabs-key").value });
     elevenLabsAsked = false;
     $("elevenlabs-key").value = "";
-    $("elevenlabs-key").placeholder = "Saved in your keychain";
-    status.textContent = "KEY SAVED";
+    $("elevenlabs-key").placeholder = "已保存在钥匙串中";
+    status.textContent = "密钥已保存";
     react("joy");
   } catch (error) {
     status.textContent = String(error).toUpperCase();
@@ -638,7 +635,7 @@ $("try-elevenlabs").addEventListener("click", async () => {
   const id = $("elevenlabs-voice").value || elevenLabsVoices[0]?.id;
   const preview = elevenLabsVoices.find((v) => v.id === id)?.preview;
   if (!preview) {
-    status.textContent = "NO SAMPLE FOR THIS VOICE";
+    status.textContent = "这个声音没有试听";
     react("oops", 2200);
     return;
   }
@@ -657,7 +654,7 @@ $("try-elevenlabs").addEventListener("click", async () => {
 const offered = await invoke("update_offered");
 if (offered) {
   $("update").hidden = false;
-  $("update").textContent = `OpenCharm ${offered} is out. Get it on GitHub →`;
+  $("update").textContent = `OpenCharm ${offered} 已发布。去 GitHub 获取 →`;
   $("update").addEventListener("click", () =>
     invoke("open_release", { version: offered })
   );
@@ -673,14 +670,14 @@ $("restart").addEventListener("click", async () => {
 $("check").addEventListener("click", () => {
   const note = $("check-note");
   note.className = "note";
-  note.textContent = "Checking…";
+  note.textContent = "检查中…";
   react("thinking", 4000);
   let socket;
   try {
     socket = new WebSocket($("url").value.trim(), ["opencharm"]);
   } catch {
     note.className = "note bad";
-    note.textContent = "That isn't a WebSocket address (ws://… or wss://…).";
+    note.textContent = "这不是 WebSocket 地址（ws://… 或 wss://…）。";
     react("confused");
     return;
   }
@@ -690,8 +687,8 @@ $("check").addEventListener("click", () => {
     socket.close();
     note.className = ok ? "note ok" : "note bad";
     note.textContent = ok
-      ? "charmd is there. Your charm is talking to it."
-      : "No charmd there. Is opencharm serve running?";
+      ? "charmd 在那里，你的挂件正在与它通信。"
+      : "那里没有 charmd。opencharm serve 在运行吗？";
     react(ok ? "joy" : "sad", 2400);
   };
   const timer = setTimeout(() => done(false), 3000);
@@ -701,6 +698,6 @@ $("check").addEventListener("click", () => {
 
 $("forget").addEventListener("click", async () => {
   await invoke("forget_pairing");
-  status.textContent = "FORGOTTEN: PAIR AGAIN FROM THE NOTCH";
+  status.textContent = "已忘记配对：请从屏幕顶部重新配对";
   react("surprised", 2000);
 });

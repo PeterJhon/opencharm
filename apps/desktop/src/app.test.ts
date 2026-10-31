@@ -54,6 +54,17 @@ describe("the desktop app", () => {
       expect(ids, `sim.js uses #${id}`).toContain(id);
   });
 
+  it("keeps dynamic WebViews out of synchronous Windows callbacks", () => {
+    const rust = read(APP, "src-tauri", "src", "lib.rs");
+    for (const command of ["open_settings", "open_setup", "open_add_charm"])
+      expect(rust).toContain(`async fn ${command}(`);
+    expect(rust).toMatch(
+      /fn show_off_event_thread\([\s\S]*?std::thread::spawn\(move \|\|/
+    );
+    for (const window of ["settings", "setup", "add_charm"])
+      expect(rust).toContain(`show_off_event_thread(app, show_${window});`);
+  });
+
   it("lets the setup window use the app's commands and the folder picker", () => {
     const caps = ["default.json", "settings.json"].map(
       (file) =>
