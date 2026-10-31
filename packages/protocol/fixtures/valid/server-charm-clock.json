@@ -1,0 +1,4 @@
+{
+  "direction": "server",
+  "message": { "type": "charm", "op": "clock", "time": "21:55" }
+}

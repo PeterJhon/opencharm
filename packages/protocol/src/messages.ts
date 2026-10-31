@@ -88,6 +88,14 @@ const answer = z.object({
   yes: z.boolean(),
 });
 
+// One line to read aloud (spec 017), tapped on the progress page. Only to a charmd whose hello
+// offers `features.speak`.
+const speak = z.object({
+  type: z.literal("charm"),
+  op: z.literal("speak"),
+  text: shownText(1, 200),
+});
+
 // The charm's battery (spec 009): sent once unlocked and again when it changes; charmd keeps it for
 // `opencharm status` (an agent tool for it is proposed in spec 012). A charm without a battery (the desktop charm) never sends it.
 const battery = z.object({
@@ -108,7 +116,11 @@ const serverHello = z.object({
   // charm's battery (spec 009). Absent from an older charmd, which would close the connection on a
   // message it doesn't know, so a charm sends these only when offered.
   features: z
-    .object({ text: z.boolean().optional(), battery: z.boolean().optional() })
+    .object({
+      text: z.boolean().optional(),
+      battery: z.boolean().optional(),
+      speak: z.boolean().optional(),
+    })
     .optional(),
 });
 const stt = z.object({
@@ -193,14 +205,37 @@ const look = z.object({
   volume: z.number().int().min(0).max(100).optional(),
 });
 
+// What the agent is working through (spec 017): the latest plan, then its tool calls, in order.
+// Sent whole on every change; the charm scrolls the list and reads a tapped line. A status the
+// charm doesn't know would make the whole message invalid, so charmd maps every ACP status to one
+// of these four.
+const progressEntry = z.object({
+  text: shownText(1, 200),
+  status: z.enum(["pending", "in_progress", "completed", "failed"]),
+});
+const progress = z.object({
+  type: z.literal("charm"),
+  op: z.literal("progress"),
+  entries: z.array(progressEntry).max(12),
+});
+
 // A question for the person holding the charm (the decision layout: orange ring, hold or press).
 const ask = z.object({
   type: z.literal("charm"),
   op: z.literal("ask"),
   id: askId,
-  text: shownText(1, 200),
+  // A long approval is the agent's full tool title: the charm scrolls it. charmd keeps it to 200
+  // bytes for a charm whose hello doesn't offer features.long_ask (an older one would drop it).
+  text: shownText(1, 2000),
   yes: askLabel.optional(),
   no: askLabel.optional(),
+});
+// The time on the charm's screen, from the computer (its own timezone): sent once on unlock and
+// again as each minute turns. A charm whose hello doesn't offer features.clock never gets one.
+const clock = z.object({
+  type: z.literal("charm"),
+  op: z.literal("clock"),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
 });
 // The question is gone (answered elsewhere, timed out, or its turn was cancelled).
 const askEnd = z.object({
@@ -217,6 +252,7 @@ const CLIENT_SCHEMAS = {
   "charm:answer": answer,
   "charm:text": typed,
   "charm:battery": battery,
+  "charm:speak": speak,
 } as const;
 const SERVER_SCHEMAS = {
   hello: serverHello,
@@ -229,8 +265,10 @@ const SERVER_SCHEMAS = {
   "charm:locked": locked,
   "charm:revoked": revoked,
   "charm:face": face,
+  "charm:progress": progress,
   "charm:ask": ask,
   "charm:ask_end": askEnd,
+  "charm:clock": clock,
   "charm:look": look,
 } as const;
 
@@ -260,3 +298,4 @@ export {
 export type { ClientMessage, ServerMessage };
 export type CharmBuild = z.infer<typeof charmBuild>;
 export type CharmBattery = Omit<z.infer<typeof battery>, "type" | "op">;
+export type ProgressEntry = z.infer<typeof progressEntry>;

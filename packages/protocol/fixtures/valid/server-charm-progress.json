@@ -1,0 +1,12 @@
+{
+  "direction": "server",
+  "message": {
+    "type": "charm",
+    "op": "progress",
+    "entries": [
+      { "text": "Read the spec", "status": "completed" },
+      { "text": "Run npm test", "status": "in_progress" },
+      { "text": "Fix the failing test", "status": "pending" }
+    ]
+  }
+}

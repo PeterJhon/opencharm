@@ -1,0 +1,8 @@
+{
+  "direction": "client",
+  "message": {
+    "type": "charm",
+    "op": "speak",
+    "text": "Run npm test"
+  }
+}
