@@ -21,9 +21,14 @@ const ATTRIBUTION =
 
 /** 1 MB: a bigger file is almost always a build output or a dataset that belongs elsewhere. */
 const MAX_FILE_BYTES = 1024 * 1024;
-// Big files kept on purpose: the symbol font the charm's heart comes from.
+// Big files kept on purpose: the symbol font the charm's heart comes from, and the Chinese font subset
+// with the LVGL bitmap font generated from it (spec 016).
 const BIG_ON_PURPOSE = new Set([
   "firmware/core/fonts/NotoSansSymbols2-Regular.ttf",
+  "firmware/core/fonts/NotoSansSC-Medium-subset.ttf",
+  "firmware/core/fonts/NotoSansSC-Medium.otf",
+  "firmware/core/src/ui/fonts/charm_cjk_24.c",
+  "firmware/core/src/ui/fonts/charm_cjk_24_full.bin",
 ]);
 
 function findSecrets(text: string): Finding[] {
