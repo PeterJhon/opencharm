@@ -1,6 +1,6 @@
 # 011: Ask on the charm
 
-Status: Done
+Status: In progress
 Depends on: 005, 006, 010
 
 ## Why
@@ -10,18 +10,18 @@ Agents ask before doing something outside their rules (ACP `session/request_perm
 ## Scope
 
 - **Protocol** (TypeScript and C++, shared fixtures):
-  - charmd → charm `{"type":"charm","op":"ask","id","text","yes"?,"no"?}`: a question (≤ 200 characters), optional labels (≤ 12 characters, default ALLOW / NO).
+  - charmd → charm `{"type":"charm","op":"ask","id","text","yes"?,"no"?}`: a question (≤ 2000 bytes), optional labels (≤ 12 characters, default ALLOW / NO). A charm says `features.long_ask` in its hello; charmd keeps the question to 200 bytes for a charm that doesn't (a newer charmd with an older charm).
   - charmd → charm `{"type":"charm","op":"ask_end","id"}`: the question is gone (timed out, turn cancelled).
   - charm → charmd `{"type":"charm","op":"answer","id","yes":true|false}`.
 - **Charm** (firmware core, so device and emulator alike):
-  - Shows the decision layout: the question in the speech layout, the orange ring, and a hint line `HOLD · ALLOW    PRESS · NO`.
+  - Shows the decision layout: the question in the speech layout, the orange ring, and a hint line `HOLD · ALLOW    PRESS · NO`. The question wraps and is taller than its three-line window: dragging it scrolls through the whole task, and the hint stays put. A thin scrollbar shows there is more. Hold and press answer as before; no new required gesture.
   - Holding the key for 200 ms answers yes at once, without opening the microphone. A short press answers no.
   - The screen stays awake while asking. Locking or a lost connection drops the question.
   - Speech already playing keeps playing.
 - **charmd**:
   - The session asks only an unlocked charm, one question at a time, and treats a 30 s silence as no (`ask_end` is sent).
   - A cancelled turn, a lock or a closed connection also count as no.
-  - The turn hands `ask` to the agent. The question reads "Claude Code wants to write notes/x.md".
+  - The turn hands `ask` to the agent. The question reads "Claude Code wants to write notes/x.md"; a long tool title is kept (paths shortened, no arbitrary 120-character cut) and fitted to the charm's limit.
   - The ACP adapter turns a permission request into a question: yes → `allow_once`, no → `reject_once`. A request outside a turn is still refused.
 - `opencharm dev ask <charm> "<question>"` pushes a question by hand and prints the answer.
 - Emulator rebuilt; an end-to-end test answers yes with a hold and no with a press.
@@ -37,7 +37,13 @@ Agents ask before doing something outside their rules (ACP `session/request_perm
 - [x] charmd tests: answer routing, timeout → no + `ask_end`, cancel → no, locked charm → no, ACP mapping.
 - [x] Emulator end to end: decision shown (screenshot), hold → the fake agent's "Done.", press → "Not allowed."
 - [x] Real Claude Code: a write outside `charm/` is asked on a charm; yes writes the file, no doesn't.
+- [x] A long question (the full tool title) wraps, scrolls to its end on square and round screens, and dragging it does not answer (UI snapshots `decision-long-480`, `decision-long-466-round`; `ui_test.cpp`).
+- [x] charmd sends the full title; a charm without `features.long_ask` still gets at most 200 bytes (`session.test.ts`, `acp.test.ts`).
 - [x] `npm run check`, firmware tests and format, end to end green; docs in sync.
+
+## Notes (31 October 2026)
+
+- A long approval was cut after three lines at 35 px, so the person could not read what they were approving. The question now scrolls (the same decision layout, ring and hint) and charmd sends the whole tool title; the protocol limit rises from 200 to 2000 bytes for a charm that advertises `features.long_ask` in its hello. The 200-byte limit stays for older charms, so a newer charmd never makes a question vanish on them.
 
 ## Notes (1 October 2026)
 

@@ -102,7 +102,7 @@ Several agents at once, an automatic updater, Windows-specific folder convention
 - [x] Speak replies off from the menu: a spoken question gets a text reply (the maintainer, 5 October 2026).
 - [x] New conversation: the app's request to charmd, and an error (not a crash) when no charmd answers (Rust tests, 13 October 2026).
 - [ ] New conversation from the menu on a real run: the next question doesn't know the one before.
-- [ ] Windows on a real machine: the pill at the top centre, the key, the managed charmd ending with the app.
+- [ ] Windows on a real machine: the pill at the top centre, Settings and setup, the typing key, and managed charmd are checked in a source build (31 October 2026); the talk key, microphone turn and charmd ending with the app remain.
 
 Bundled charmd:
 
@@ -112,7 +112,7 @@ Bundled charmd:
 - [x] The release checks Node's download against its pinned SHA-256 and fails if it doesn't match; the Windows and Intel Mac builds carry their own Node and voice engine (`desktop@0.7.0` built for all three; the staging script refuses a mismatched archive or another target's engine).
 - [ ] Another `opencharm` chosen in Settings → Advanced is still used, with the old-CLI fallbacks.
 - [x] The download sizes per platform and the installed size on Apple silicon, recorded in `apps/desktop/README.md` (installed sizes on Intel and Windows not measured).
-- [ ] The same on Windows on a real machine.
+- [ ] The bundled release on Windows on a real machine; a source build used the repository CLI and Node successfully (31 October 2026).
 - [x] The docs it makes wrong, updated in the same PR: `apps/desktop/README.md` (no Node or CLI to install; the bundled charmd; sizes), `OPENCHARM.md` (the desktop section), CONTRIBUTING ("Releasing": the desktop unit's paths).
 
 Guided setup:
@@ -123,9 +123,9 @@ Guided setup:
 - [x] The new workspace's name rules and target check (Rust tests: reserved names, separators, trailing dot or space, a folder with files); Create makes `<location>/<name>` and runs `opencharm init` there.
 - [ ] The whole flow in the built app with a throwaway `OPENCHARM_DATA`, the fake agent, voice and mic: create a workspace, name and colour it, one spoken turn on the Try it step; a screenshot of every step.
   - Every step rendered in headless Chrome with a stand-in for the app's commands, on macOS and Windows settings, and screenshotted (5 October 2026); the click-through in the built app is the maintainer's run.
-- [ ] The same on Windows on a real machine.
+- [ ] The whole guided setup on Windows; its first step and Settings render in a source build (31 October 2026), but creating a workspace and the spoken Try it step remain.
 
-- [ ] Add a charm: with **Charms on this network** on, a board set up with an empty address finds the app's charmd, appears in the window with its code, pairs with a PIN chosen in the window, and shows in **Your charms** with its battery (manual check on the board; Rust and page tests for the switch, the config and the waiting list).
+- [ ] Add a charm: with **Charms on this network** on, a board set up with an empty address finds the app's charmd and appears in the window (checked on Windows 11, 31 October 2026); pairing with its PIN and showing it under **Your charms** remain (Rust and page tests cover the switch, config and waiting list).
 
 ## Notes
 
