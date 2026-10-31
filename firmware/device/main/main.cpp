@@ -39,6 +39,28 @@ void init_nvs() {
   ESP_ERROR_CHECK(err);
 }
 
+// The full GB18030 CJK font, embedded by target_add_binary_data and read in place from flash
+// (spec 016). If it fails to load, the core's small C font is the fallback.
+extern "C" {
+extern const uint8_t cjk_font_start[] asm("_binary_charm_cjk_24_full_bin_start");
+extern const uint8_t cjk_font_end[] asm("_binary_charm_cjk_24_full_bin_end");
+}
+
+lv_font_t* load_full_cjk_font() {
+  const size_t size = size_t(cjk_font_end - cjk_font_start);
+  lv_binfont_dsc_t font_dsc = {};
+  font_dsc.buffer = cjk_font_start;
+  font_dsc.buffer_size = uint32_t(size);
+  // Glyphs are read from flash when drawn: the 7 MB font must not be copied into RAM.
+  font_dsc.dynamic_glyph_load = true;
+  lv_font_t* font = lv_binfont_create_ex(&font_dsc);
+  if (font)
+    ESP_LOGI("charm", "full CJK font: %u KB", unsigned(size / 1024));
+  else
+    ESP_LOGE("charm", "full CJK font failed to load: %u KB", unsigned(size / 1024));
+  return font;
+}
+
 void log_status(const charm::Status& s) {
   ESP_LOGI(kTag, "battery %d%% %s%s %d mV | board %d C | chip %d C", s.battery.percent,
            s.battery.charging ? "charging" : "not charging", s.battery.usb ? " on USB" : "",
@@ -61,7 +83,10 @@ extern "C" void app_main() {
 #endif
 
   static DeviceHal hal(b);
-  static charm::LvglView view(b.display, charm::ViewOptions{});
+  static lv_font_t* cjk = load_full_cjk_font();
+  static charm::ViewOptions view_options;
+  view_options.cjk = cjk;
+  static charm::LvglView view(b.display, view_options);
   charm::AppOptions options;
   // Spec 015: the board's kind is "board" and its release unit
   // "firmware@x.y.z".
@@ -70,6 +95,8 @@ extern "C" void app_main() {
   static charm::App app(hal, view, options);
   view.on_face_tap([](void*) { app.on_touch_face(now_ms()); }, nullptr);
   view.on_face_hold([](void*) { app.on_touch_hold(now_ms()); }, nullptr);
+  view.on_progress_tap([](void*, const char* text) { app.on_progress_tap(text, now_ms()); },
+                       nullptr);
   view.on_pin([](void*, const char* pin) { app.on_pin_entered(pin, now_ms()); }, nullptr);
   app.start(now_ms());
   ESP_LOGI(kTag, "free memory: %u KB internal, %u KB PSRAM",

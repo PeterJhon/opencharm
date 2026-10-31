@@ -125,6 +125,20 @@ TEST_CASE("a question carries its id, text and labels, with ALLOW / NO by defaul
   CHECK(m.id == "q2");
 }
 
+TEST_CASE("a question may carry a long task but not more than 2000 bytes") {
+  charm::ServerMessage m;
+  const std::string text(2000, 'x');
+  const std::string long_json = R"({"type":"charm","op":"ask","id":"q1","text":")" + text + R"("})";
+  REQUIRE(charm::parse_server_message(long_json, m));
+  CHECK(m.kind == charm::ServerKind::Ask);
+  CHECK(m.text.size() == 2000);
+
+  const std::string too_long(2001, 'x');
+  const std::string refused =
+      R"({"type":"charm","op":"ask","id":"q1","text":")" + too_long + R"("})";
+  CHECK_FALSE(charm::parse_server_message(refused, m));
+}
+
 TEST_CASE("a face may carry a feeling over idle, but never the orange one") {
   charm::ServerMessage m;
   REQUIRE(charm::parse_server_message(
@@ -151,6 +165,48 @@ TEST_CASE("a face may carry a feeling over idle, but never the orange one") {
   }
 }
 
+TEST_CASE("progress carries the plan and tool calls in order, with their states") {
+  charm::ServerMessage m;
+  REQUIRE(charm::parse_server_message(
+      R"({"type":"charm","op":"progress","entries":[{"text":"Read the spec","status":"completed"},{"text":"Run npm test","status":"in_progress"},{"text":"修复中文显示","status":"pending"}]})",
+      m));
+  CHECK(m.kind == charm::ServerKind::Progress);
+  REQUIRE(m.progress.size() == 3);
+  CHECK(m.progress[0].text == "Read the spec");
+  CHECK(m.progress[0].status == charm::ProgressStatus::Completed);
+  CHECK(m.progress[1].status == charm::ProgressStatus::InProgress);
+  CHECK(m.progress[2].text == "修复中文显示");
+  CHECK(m.progress[2].status == charm::ProgressStatus::Pending);
+
+  // An empty list is how a turn with nothing to show clears the page.
+  REQUIRE(charm::parse_server_message(R"({"type":"charm","op":"progress","entries":[]})", m));
+  CHECK(m.progress.empty());
+
+  for (const char* raw :
+       {R"({"type":"charm","op":"progress"})",
+        R"({"type":"charm","op":"progress","entries":[{"text":"x","status":"running"}]})",
+        R"({"type":"charm","op":"progress","entries":[{"text":"","status":"pending"}]})"}) {
+    CAPTURE(raw);
+    charm::ServerMessage bad;
+    CHECK_FALSE(charm::parse_server_message(raw, bad));
+  }
+}
+
+TEST_CASE("charmd's hello says whether it reads a tapped progress line") {
+  charm::ServerMessage m;
+  REQUIRE(charm::parse_server_message(
+      R"({"type":"hello","transport":"websocket","session_id":"s1","audio_params":{"format":"opus","sample_rate":24000,"channels":1,"frame_duration":60},"features":{"speak":true}})",
+      m));
+  CHECK(m.kind == charm::ServerKind::Hello);
+  CHECK(m.accepts_speak);
+  CHECK_FALSE(m.accepts_text);
+
+  REQUIRE(charm::parse_server_message(
+      R"({"type":"hello","transport":"websocket","session_id":"s1","audio_params":{"format":"opus","sample_rate":24000,"channels":1,"frame_duration":60}})",
+      m));
+  CHECK_FALSE(m.accepts_speak);
+}
+
 TEST_CASE("client messages match the shared fixtures") {
   for (const auto& f : load("valid")) {
     if (f.direction != "client") continue;
@@ -170,6 +226,8 @@ TEST_CASE("client messages match the shared fixtures") {
       CHECK(same_json(charm::client_text("Che tempo fa domani a \"Milano\"?"), f.raw));
     if (f.name == "client-charm-answer-no")
       CHECK(same_json(charm::client_answer("q1", false), f.raw));
+    if (f.name == "client-charm-speak")
+      CHECK(same_json(charm::client_speak("Run npm test"), f.raw));
   }
 }
 

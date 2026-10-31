@@ -83,6 +83,11 @@ void Headless::press(int x, int y) {
   advance(60);
 }
 
+void Headless::move(int x, int y) {
+  point_ = {x, y};
+  advance(20);
+}
+
 void Headless::release() {
   pressed_ = false;
   advance(60);

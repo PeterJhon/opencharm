@@ -25,6 +25,9 @@ struct ViewOptions {
   bool notch = false;
   int notch_width = 0;   // pixels; 0 = half the width
   int strip_height = 0;  // pixels; 0 = a fifth of the height
+  // The Chinese fallback: the small 24 px C font by default (emulator, host tests); the board
+  // passes the full GB18030 binary font loaded from flash (spec 016).
+  const lv_font_t* cjk = nullptr;
 };
 
 // The OpenCharm screens drawn with LVGL: a port of packages/design/src/charm-face.js (geometry,
@@ -41,6 +44,8 @@ class LvglView : public View {
   // Notch shape: told when the panel below the notch opens, closes or needs more room, with its
   // height in pixels (the window grows or shrinks to it).
   void on_panel(void (*callback)(void* ctx, bool open, int height), void* ctx);
+  // A progress line tapped (spec 017): its full text, not the ellipsised label.
+  void on_progress_tap(void (*callback)(void* ctx, const char* text), void* ctx);
   // One key of the PIN pad ("0"…"9", "<", "OK"): the touch pad and a keyboard both end up here.
   void press_pad_key(const char* key);
   // The PIN screen is up and takes keys (the desktop app types its PIN only then).
@@ -59,27 +64,55 @@ class LvglView : public View {
   void speech_start() override;
   void speech_line(std::string_view text) override;
   void speech_end() override;
+  void show_report(std::string_view text) override;
   void set_needs_you(bool on) override;
   void squish() override;
   void set_voice_level(float level) override;
   void set_look(uint32_t glyph, bool calm) override;
+  void set_clock(std::string_view hm) override;
   void show_decision(std::string_view text, std::string_view yes, std::string_view no) override;
   void set_battery(const Battery& battery, BatteryShow show) override;
   void show_status(const Status& status) override;
+  void show_progress(const std::vector<ProgressEntry>& entries, std::string_view heard) override;
   void tick(uint32_t now_ms) override;
 
-  // For tests: the text the battery indicator and the status screen show.
+  // For tests: the text the battery indicator, the clock, the status screen and the progress page
+  // show.
   std::string battery_text() const;
+  std::string clock_text() const;
   std::string status_text() const;
+  std::string progress_text() const;
+  std::string progress_heard_text() const;
+  bool progress_row_area(int index, lv_area_t& out) const;
+  bool progress_list_area(lv_area_t& out) const;
+  // For tests: whether a question is taller than its three-line window, and how far it is scrolled.
+  bool decision_text_overflows() const;
+  int decision_scroll_y() const;
+  // For tests: the text of the reply report, whether it overflows, and how far it is scrolled.
+  std::string report_text() const;
+  bool report_text_overflows() const;
+  int report_scroll_y() const;
 
  private:
-  enum class Mode { Boot, Connecting, Pairing, Pin, Blocked, Face, Decision, Status };
+  enum class Mode {
+    Boot,
+    Connecting,
+    Pairing,
+    Pin,
+    Blocked,
+    Face,
+    Decision,
+    Status,
+    Progress,
+    Report
+  };
 
   void build();
   void set_face(std::string_view face_id, bool pop);
   void set_line(std::string_view text, bool typed);
   void set_mode(Mode mode);
   void place_line();
+  void place_clock();
   void reset_hint();
   void set_hint(std::string_view yes, std::string_view no, const char* gap, int letter_space);
   int hint_width(int letter_space) const;
@@ -95,7 +128,9 @@ class LvglView : public View {
   void build_battery();
   void build_status();
   void place_status();
+  void build_progress();
   static void on_pad_event(lv_event_t* e);
+  static void on_progress_row(lv_event_t* e);
   static void on_screen_click(lv_event_t* e);
   static void on_screen_touch(lv_event_t* e);
   uint32_t random(uint32_t lo, uint32_t hi);
@@ -113,6 +148,9 @@ class LvglView : public View {
   lv_obj_t* zzz_ = nullptr;
   lv_obj_t* line_box_ = nullptr;  // clips the line: whole lines only, newest words in view
   lv_obj_t* line_ = nullptr;
+  // The clock at the top right of the screen (none on the notch, which has no room for one).
+  lv_obj_t* clock_ = nullptr;
+  std::string clock_text_;
   lv_obj_t* code_ = nullptr;
   lv_obj_t* hint_ = nullptr;
   lv_obj_t* title_ = nullptr;
@@ -132,6 +170,17 @@ class LvglView : public View {
   static constexpr int kStatusLines = 6;
   lv_obj_t* status_percent_ = nullptr;
   lv_obj_t* status_lines_[kStatusLines] = {};
+  // The progress page (spec 017): a title and a scrollable list of one-line entries.
+  static constexpr int kProgressRows = 12;
+  lv_obj_t* progress_title_ = nullptr;
+  lv_obj_t* progress_heard_ = nullptr;
+  lv_obj_t* progress_list_ = nullptr;
+  lv_obj_t* progress_rows_[kProgressRows] = {};
+  lv_obj_t* progress_labels_[kProgressRows] = {};
+  std::string progress_entries_[kProgressRows];
+  int progress_active_ = -1;
+  void (*progress_callback_)(void*, const char*) = nullptr;
+  void* progress_ctx_ = nullptr;
   // What each glyph shows now. LVGL redraws on every style write, even an unchanged one, so a
   // glyph is only touched when it really moves: a face at rest costs no frames (battery, CPU).
   struct Placed {
@@ -187,6 +236,7 @@ class LvglView : public View {
   void (*hold_callback_)(void*) = nullptr;
   void* hold_ctx_ = nullptr;
   uint32_t press_start_ = 0;  // when the finger went down; 0 = not down
+  int press_y_ = 0;           // where it went down (a report only takes the hold on its face)
   bool hold_fired_ = false;
   void (*panel_callback_)(void*, bool, int) = nullptr;
   void* panel_ctx_ = nullptr;

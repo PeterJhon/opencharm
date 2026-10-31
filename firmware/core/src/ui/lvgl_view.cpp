@@ -5,17 +5,42 @@
 #include <cstdio>
 #include <cstring>
 
+// The generated fonts are C definitions; MSVC would otherwise mangle these references in C++.
+extern "C" {
 LV_FONT_DECLARE(charm_eyes_163);
 LV_FONT_DECLARE(charm_eyes_95);
 LV_FONT_DECLARE(charm_eyes_57);
 LV_FONT_DECLARE(charm_digits_80);
 LV_FONT_DECLARE(charm_text_35);
 LV_FONT_DECLARE(charm_text_24);
+LV_FONT_DECLARE(charm_cjk_24);
+}
 
 namespace charm {
 namespace {
 
 constexpr int32_t kLineSpace = 9;  // between lines of the speech text
+
+// Copies of the generated fonts with the Chinese font as their fallback: the generated structs are
+// const (and in flash on the board), so their fallback pointer can't be set in place.
+lv_font_t g_text_35;
+lv_font_t g_text_24;
+bool g_text_fonts_ready = false;
+
+void init_text_fonts(const lv_font_t* cjk) {
+  if (!g_text_fonts_ready) {
+    g_text_fonts_ready = true;
+    g_text_35 = charm_text_35;
+    g_text_24 = charm_text_24;
+  }
+  // The board swaps in the full binary font; a later view (a host test) can swap back.
+  g_text_35.fallback = cjk;
+  g_text_24.fallback = cjk;
+}
+
+const lv_font_t* text35() { return g_text_fonts_ready ? &g_text_35 : &charm_text_35; }
+
+const lv_font_t* text24() { return g_text_fonts_ready ? &g_text_24 : &charm_text_24; }
 
 // Motion timings from packages/design/tokens.json and charm-face.js.
 constexpr uint32_t kBlinkMs = 120;
@@ -117,6 +142,7 @@ LvglView::LvglView(lv_display_t* display, ViewOptions options)
 }
 
 void LvglView::build() {
+  init_text_fonts(options_.cjk ? options_.cjk : &charm_cjk_24);
   root_ = lv_display_get_screen_active(display_);
   lv_obj_clean(root_);
   lv_obj_set_style_bg_color(root_, lv_color_black(), 0);
@@ -146,22 +172,34 @@ void LvglView::build() {
   lv_obj_set_clickable(line_box_, false);
   lv_obj_set_width(line_box_, int(w_ * (options_.round ? 0.72f : 0.82f)));
   lv_obj_align(line_box_, LV_ALIGN_TOP_MID, 0, int(h_ * 0.50f));
-  line_ = make_label(line_box_, &charm_text_35, ink);
+  line_ = make_label(line_box_, text35(), ink);
   lv_obj_set_width(line_, lv_pct(100));
   lv_label_set_long_mode(line_, LV_LABEL_LONG_MODE_WRAP);
   lv_obj_set_style_text_align(line_, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_line_space(line_, kLineSpace, 0);
+  // A long question scrolls; the scrollbar is dim ink, never orange.
+  lv_obj_set_style_bg_color(line_box_, lv_color_hex(glyph_), LV_PART_SCROLLBAR);
+  lv_obj_set_style_bg_opa(line_box_, LV_OPA_30, LV_PART_SCROLLBAR);
+  lv_obj_set_style_width(line_box_, std::max(2, int(u_ * 0.008f)), LV_PART_SCROLLBAR);
 
   code_ = make_label(root_, &charm_digits_80, ink);
   lv_obj_align(code_, LV_ALIGN_CENTER, 0, int(h_ * 0.07f));
-  hint_ = make_label(root_, &charm_text_24, ink);
+  hint_ = make_label(root_, text24(), ink);
   lv_obj_set_style_text_opa(hint_, LV_OPA_60, 0);
   lv_obj_set_style_text_align(hint_, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(hint_, LV_ALIGN_TOP_MID, 0, int(h_ * 0.76f));
 
-  title_ = make_label(root_, &charm_text_24, ink);
+  title_ = make_label(root_, text24(), ink);
   lv_obj_align(title_, LV_ALIGN_TOP_MID, 0, int(h_ * (options_.round ? 0.13f : 0.07f)));
-  dots_ = make_label(root_, &charm_text_35, ink);
+  // The time, top right, away from the eyes and the line. On the notch there is no room for it.
+  if (!options_.notch) {
+    clock_ = make_label(root_, text24(), ink);
+    lv_obj_align(clock_, LV_ALIGN_TOP_RIGHT,
+                 -int(u_ * (options_.round ? 0.17f : 0.035f)),
+                 int(h_ * (options_.round ? 0.18f : 0.035f)));
+    hide(clock_, true);
+  }
+  dots_ = make_label(root_, text35(), ink);
   lv_obj_align(dots_, LV_ALIGN_TOP_MID, 0, int(h_ * (options_.round ? 0.2f : 0.14f)));
 
   pad_ = lv_buttonmatrix_create(root_);
@@ -182,7 +220,7 @@ void LvglView::build() {
   lv_obj_set_style_border_width(pad_, 2, LV_PART_ITEMS);
   lv_obj_set_style_radius(pad_, LV_RADIUS_CIRCLE, LV_PART_ITEMS);
   lv_obj_set_style_shadow_width(pad_, 0, LV_PART_ITEMS);
-  lv_obj_set_style_text_font(pad_, &charm_text_35, LV_PART_ITEMS);
+  lv_obj_set_style_text_font(pad_, text35(), LV_PART_ITEMS);
   lv_obj_set_style_text_color(pad_, lv_color_hex(ink), LV_PART_ITEMS);
   lv_obj_add_event_cb(pad_, on_pad_event, LV_EVENT_VALUE_CHANGED, this);
 
@@ -209,6 +247,7 @@ void LvglView::build() {
 
   build_battery();
   build_status();
+  build_progress();
   face_ = find_face("neutral");
 }
 
@@ -248,7 +287,7 @@ void LvglView::build_battery() {
   lv_obj_set_size(battery_nub_, line, bh / 2);
   lv_obj_set_style_bg_color(battery_nub_, lv_color_hex(glyph_), 0);
   lv_obj_set_style_bg_opa(battery_nub_, LV_OPA_COVER, 0);
-  battery_text_ = make_label(battery_, &charm_text_24, glyph_);
+  battery_text_ = make_label(battery_, text24(), glyph_);
   lv_obj_set_style_pad_left(battery_text_, line * 3, 0);
   hide(battery_, true);
 }
@@ -259,7 +298,7 @@ void LvglView::build_status() {
   status_percent_ = make_label(root_, &charm_digits_80, glyph_);
   for (int i = 0; i < kStatusLines; ++i) {
     // The state in the larger text; the readings smaller; the build, last, dim.
-    lv_obj_t* label = make_label(root_, i == 0 ? &charm_text_35 : &charm_text_24, glyph_);
+    lv_obj_t* label = make_label(root_, i == 0 ? text35() : text24(), glyph_);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     if (i == kStatusLines - 1) lv_obj_set_style_text_opa(label, LV_OPA_60, 0);
@@ -281,7 +320,7 @@ void LvglView::place_status() {
   for (int i = 0; i < kStatusLines; ++i) {
     lv_obj_t* label = status_lines_[i];
     if (lv_obj_is_hidden(label)) continue;
-    const int line = lv_font_get_line_height(i == 0 ? &charm_text_35 : &charm_text_24);
+    const int line = lv_font_get_line_height(i == 0 ? text35() : text24());
     if (i == kStatusLines - 1) y += int(u_ * 0.03f);  // the build sits a little apart
     int width = int(w_ * 0.88f);
     if (options_.round) {
@@ -295,6 +334,196 @@ void LvglView::place_status() {
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, y);
     y += line + int(u_ * (i == 0 ? 0.035f : 0.012f));
   }
+}
+
+// The progress page (spec 017): a dim title, what the person said, and a scrollable list. Each row
+// is one line that ends in "…" when it doesn't fit; a tap can read the whole line when replies are
+// spoken (spec 003's Speak replies).
+void LvglView::build_progress() {
+  progress_title_ = make_label(root_, text24(), glyph_);
+  lv_obj_set_style_text_opa(progress_title_, LV_OPA_60, 0);
+  lv_label_set_text(progress_title_, "Progress");
+  lv_obj_align(progress_title_, LV_ALIGN_TOP_MID, 0, int(h_ * (options_.round ? 0.12f : 0.07f)));
+  progress_heard_ = make_label(root_, text24(), glyph_);
+  lv_obj_set_style_text_opa(progress_heard_, LV_OPA_60, 0);
+  lv_obj_set_style_text_align(progress_heard_, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(progress_heard_, LV_LABEL_LONG_MODE_DOTS);
+  hide(progress_heard_, true);
+
+  progress_list_ = lv_obj_create(root_);
+  lv_obj_remove_style_all(progress_list_);
+  lv_obj_set_scrollable(progress_list_, true);
+  lv_obj_set_scroll_dir(progress_list_, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(progress_list_, LV_SCROLLBAR_MODE_AUTO);
+  // A tap on the list's empty space is a tap on the background: it closes the page. Rows don't
+  // bubble, so tapping one reads it instead.
+  lv_obj_set_event_bubble(progress_list_, true);
+  const int width = int(w_ * (options_.round ? 0.68f : 0.86f));
+  const int top = int(h_ * (options_.round ? 0.20f : 0.15f));
+  // A round screen is narrower at the bottom: the list ends where its width still fits inside.
+  const int bottom = int(h_ * (options_.round ? 0.86f : 0.90f));
+  lv_obj_set_size(progress_list_, width, bottom - top);
+  lv_obj_align(progress_list_, LV_ALIGN_TOP_MID, 0, top);
+  lv_obj_set_flex_flow(progress_list_, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(progress_list_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_START);
+  lv_obj_set_style_pad_all(progress_list_, 0, 0);
+  lv_obj_set_style_pad_row(progress_list_, int(u_ * 0.025f), 0);
+  lv_obj_set_style_pad_right(progress_list_, int(u_ * 0.03f), 0);
+  lv_obj_set_style_bg_opa(progress_list_, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(progress_list_, 0, 0);
+  lv_obj_set_style_radius(progress_list_, 0, 0);
+  lv_obj_set_style_bg_color(progress_list_, lv_color_hex(glyph_), LV_PART_SCROLLBAR);
+  lv_obj_set_style_bg_opa(progress_list_, LV_OPA_30, LV_PART_SCROLLBAR);
+  lv_obj_set_style_width(progress_list_, std::max(2, int(u_ * 0.008f)), LV_PART_SCROLLBAR);
+
+  for (int i = 0; i < kProgressRows; ++i) {
+    lv_obj_t* row = lv_obj_create(progress_list_);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_set_clickable(row, true);
+    lv_obj_set_style_pad_all(row, int(u_ * 0.012f), 0);
+    lv_obj_set_user_data(row, reinterpret_cast<void*>(intptr_t(i + 1)));
+    lv_obj_add_event_cb(row, on_progress_row, LV_EVENT_CLICKED, this);
+    lv_obj_t* label = make_label(row, text24(), glyph_);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
+    progress_rows_[i] = row;
+    progress_labels_[i] = label;
+    hide(row, true);
+  }
+  hide(progress_title_, true);
+  hide(progress_list_, true);
+}
+
+void LvglView::on_progress_tap(void (*callback)(void*, const char*), void* ctx) {
+  progress_callback_ = callback;
+  progress_ctx_ = ctx;
+}
+
+void LvglView::on_progress_row(lv_event_t* e) {
+  auto* self = static_cast<LvglView*>(lv_event_get_user_data(e));
+  lv_obj_t* row = lv_event_get_target_obj(e);
+  int index = int(reinterpret_cast<intptr_t>(lv_obj_get_user_data(row))) - 1;
+  if (index < 0 || index >= kProgressRows) return;
+  if (!self->progress_entries_[index].empty() && self->progress_callback_)
+    self->progress_callback_(self->progress_ctx_, self->progress_entries_[index].c_str());
+}
+
+void LvglView::show_progress(const std::vector<ProgressEntry>& entries, std::string_view heard) {
+  const bool entering = mode_ != Mode::Progress;
+  if (entering) {
+    boot_phase_ = -1;
+    speaking_ = false;
+    set_line("", false);
+    set_mode(Mode::Progress);
+  }
+  const bool has_heard = !heard.empty();
+  bool relayout = entering || has_heard != !lv_obj_is_hidden(progress_heard_);
+  if (relayout) hide(progress_heard_, !has_heard);
+  if (has_heard) {
+    std::string line = "You · " + std::string(heard);
+    if (line != lv_label_get_text(progress_heard_))
+      lv_label_set_text(progress_heard_, line.c_str());
+  }
+  if (relayout) {
+    // Title, then what the person said, then the list; without a transcript the list starts higher.
+    const int title_y = int(h_ * (options_.round ? 0.12f : 0.07f));
+    const int line24 = lv_font_get_line_height(text24());
+    const int gap = int(u_ * 0.015f);
+    const int width = int(w_ * (options_.round ? 0.68f : 0.86f));
+    // Two lines for what was heard: enough for a spoken sentence, still leaving the list room.
+    const int heard_h = line24 * 2;
+    const int top = has_heard ? title_y + line24 + gap + heard_h + gap
+                              : int(h_ * (options_.round ? 0.20f : 0.15f));
+    const int bottom = int(h_ * (options_.round ? 0.86f : 0.90f));
+    lv_obj_set_size(progress_list_, width, bottom - top);
+    lv_obj_align(progress_list_, LV_ALIGN_TOP_MID, 0, top);
+    lv_obj_set_size(progress_heard_, width, heard_h);
+    lv_obj_align(progress_heard_, LV_ALIGN_TOP_MID, 0, title_y + line24 + gap);
+  }
+  const int n = std::min<int>(int(entries.size()), kProgressRows);
+  int active = -1;
+  for (int i = 0; i < kProgressRows; ++i) {
+    lv_obj_t* row = progress_rows_[i];
+    const bool shown = i < n;
+    if (shown == lv_obj_is_hidden(row)) relayout = true;
+    hide(row, !shown);
+    if (!shown) {
+      progress_entries_[i].clear();
+      continue;
+    }
+    const ProgressEntry& entry = entries[i];
+    progress_entries_[i] = entry.text;
+    lv_obj_t* label = progress_labels_[i];
+    if (entry.text != lv_label_get_text(label)) lv_label_set_text(label, entry.text.c_str());
+    lv_opa_t opacity = entry.status == ProgressStatus::InProgress ? LV_OPA_COVER
+                       : entry.status == ProgressStatus::Pending  ? LV_OPA_60
+                       : entry.status == ProgressStatus::Failed   ? LV_OPA_80
+                                                                  : LV_OPA_40;
+    if (lv_obj_get_style_text_opa(label, LV_PART_MAIN) != opacity)
+      lv_obj_set_style_text_opa(label, opacity, 0);
+    if (active < 0 && entry.status == ProgressStatus::InProgress) active = i;
+  }
+  if (active < 0) active = n - 1;
+  if (relayout) lv_obj_update_layout(progress_list_);
+  if (active >= 0 && (relayout || active != progress_active_)) {
+    lv_obj_update_layout(progress_list_);
+    lv_obj_scroll_to_view(progress_rows_[active], LV_ANIM_OFF);
+  }
+  progress_active_ = active;
+  apply();
+}
+
+std::string LvglView::progress_text() const {
+  if (mode_ != Mode::Progress) return "";
+  std::string out;
+  for (int i = 0; i < kProgressRows; ++i) {
+    if (lv_obj_is_hidden(progress_rows_[i])) continue;
+    if (!out.empty()) out += "\n";
+    out += progress_entries_[i];
+  }
+  return out;
+}
+
+std::string LvglView::progress_heard_text() const {
+  if (mode_ != Mode::Progress || lv_obj_is_hidden(progress_heard_)) return "";
+  return lv_label_get_text(progress_heard_);
+}
+
+bool LvglView::progress_row_area(int index, lv_area_t& out) const {
+  if (mode_ != Mode::Progress || index < 0 || index >= kProgressRows) return false;
+  if (lv_obj_is_hidden(progress_rows_[index])) return false;
+  lv_obj_get_coords(progress_rows_[index], &out);
+  return true;
+}
+
+bool LvglView::progress_list_area(lv_area_t& out) const {
+  if (mode_ != Mode::Progress) return false;
+  lv_obj_get_coords(progress_list_, &out);
+  return true;
+}
+
+bool LvglView::decision_text_overflows() const {
+  return mode_ == Mode::Decision && lv_obj_get_height(line_) > lv_obj_get_height(line_box_);
+}
+
+int LvglView::decision_scroll_y() const {
+  return mode_ == Mode::Decision ? int(lv_obj_get_scroll_y(line_box_)) : 0;
+}
+
+std::string LvglView::report_text() const {
+  return mode_ == Mode::Report ? lv_label_get_text(line_) : "";
+}
+
+bool LvglView::report_text_overflows() const {
+  return mode_ == Mode::Report && lv_obj_get_height(line_) > lv_obj_get_height(line_box_);
+}
+
+int LvglView::report_scroll_y() const {
+  return mode_ == Mode::Report ? int(lv_obj_get_scroll_y(line_box_)) : 0;
 }
 
 void LvglView::on_pin(void (*callback)(void*, const char*), void* ctx) {
@@ -328,9 +557,14 @@ void LvglView::set_mode(Mode mode) {
   bool pairing = mode == Mode::Pairing;
   bool decision = mode == Mode::Decision;
   bool status = mode == Mode::Status;
+  bool progress = mode == Mode::Progress;
+  bool report = mode == Mode::Report;
   hide(status_percent_, !status);
   for (lv_obj_t* label : status_lines_) hide(label, !status);
-  if (status) {
+  hide(progress_title_, !progress);
+  hide(progress_heard_, !progress);
+  hide(progress_list_, !progress);
+  if (status || progress) {
     hide(battery_, true);
   } else if (battery_show_ != BatteryShow::Hidden) {
     set_battery(last_battery_, battery_show_);  // back from the status screen
@@ -340,9 +574,10 @@ void LvglView::set_mode(Mode mode) {
   hide(dots_, !pin);
   hide(code_, !pairing);
   hide(hint_, !pairing && !decision);
-  // A question gets at most three lines, ending in "…", so it never runs into the hint below.
-  lv_label_set_long_mode(line_, decision ? LV_LABEL_LONG_MODE_DOTS : LV_LABEL_LONG_MODE_WRAP);
-  int32_t line = lv_font_get_line_height(&charm_text_35) + kLineSpace;
+  // A question gets a three-line window; a longer task wraps and scrolls instead of ending in "…",
+  // so the person can read all of what they are approving (spec 011).
+  lv_label_set_long_mode(line_, LV_LABEL_LONG_MODE_WRAP);
+  int32_t line = lv_font_get_line_height(text35()) + kLineSpace;
   // On a notch the text sits in the panel, under the mouth; elsewhere from half-height down.
   int32_t text_top = options_.notch ? strip_h_ + int32_t(strip_h_ * 0.85f) : int32_t(h_ * 0.50f);
   int32_t text_bottom = int32_t(h_ * (options_.notch ? 0.84f : options_.round ? 0.82f : 0.93f));
@@ -353,7 +588,16 @@ void LvglView::set_mode(Mode mode) {
   int32_t lines = std::max<int32_t>(1, (room + kLineSpace) / line);
   if (decision) lines = std::min<int32_t>(lines, 3);
   lv_obj_set_height(line_box_, lines * line - kLineSpace);
-  lv_obj_set_height(line_, decision ? lines * line - kLineSpace : LV_SIZE_CONTENT);
+  lv_obj_set_height(line_, LV_SIZE_CONTENT);
+  // A question and a report scroll; a tap on their text is a tap on the page (to close the report).
+  bool scrolls = decision || report;
+  lv_obj_set_scrollable(line_box_, scrolls);
+  lv_obj_set_clickable(line_box_, scrolls);
+  lv_obj_set_event_bubble(line_box_, report);
+  lv_obj_set_scroll_dir(line_box_, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(line_box_, scrolls ? LV_SCROLLBAR_MODE_AUTO : LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_style_pad_right(line_box_, scrolls ? int(u_ * 0.035f) : 0, 0);
+  if (!scrolls) lv_obj_scroll_to_y(line_box_, 0, LV_ANIM_OFF);
   place_line();
   // The pairing hint sits under the code; a question's hint sits at the bottom, under the question.
   if (options_.notch) {
@@ -366,14 +610,38 @@ void LvglView::set_mode(Mode mode) {
                  int(h_ * (decision ? (options_.round ? 0.83f : 0.86f) : 0.76f)));
   }
   if (pin || pairing) set_line("", false);
+  place_clock();
   apply();
 }
 
-// Top-aligned while the text fits; once it doesn't, the newest lines stay in view.
+// The clock belongs to the face (and a question or a report over it), not to the screens that fill
+// the display with readings or a PIN pad.
+void LvglView::place_clock() {
+  if (!clock_) return;
+  bool shown = !clock_text_.empty() &&
+               (mode_ == Mode::Face || mode_ == Mode::Decision || mode_ == Mode::Report);
+  hide(clock_, !shown);
+}
+
+void LvglView::set_clock(std::string_view hm) {
+  if (!clock_) return;  // the notch has no room for one beside its eyes
+  clock_text_ = std::string(hm);
+  lv_label_set_text(clock_, clock_text_.c_str());
+  place_clock();
+}
+
+std::string LvglView::clock_text() const {
+  if (!clock_ || lv_obj_is_hidden(clock_)) return "";
+  return lv_label_get_text(clock_);
+}
+
+// Top-aligned while the text fits; once it doesn't, the newest lines stay in view, except on a
+// question, which scrolls from the top so the task reads in order.
 void LvglView::place_line() {
   lv_obj_update_layout(line_);
   bool overflows = lv_obj_get_height(line_) > lv_obj_get_height(line_box_);
-  lv_obj_align(line_, overflows ? LV_ALIGN_BOTTOM_MID : LV_ALIGN_TOP_MID, 0, 0);
+  bool from_top = mode_ == Mode::Decision || mode_ == Mode::Report;
+  lv_obj_align(line_, overflows && !from_top ? LV_ALIGN_BOTTOM_MID : LV_ALIGN_TOP_MID, 0, 0);
 }
 
 void LvglView::set_face(std::string_view face_id, bool pop) {
@@ -397,6 +665,9 @@ void LvglView::set_line(std::string_view text, bool typed) {
   lv_label_set_text(line_, typed ? "" : say_.c_str());
   hide(line_, say_.empty());
   place_line();
+  // A new question or report starts at its beginning; dragging reads the rest.
+  if (mode_ == Mode::Decision || mode_ == Mode::Report)
+    lv_obj_scroll_to_y(line_box_, 0, LV_ANIM_OFF);
   if (!speaking_) layout_target_ = say_.empty() ? 0.0f : 1.0f;
 }
 
@@ -476,7 +747,9 @@ void LvglView::show_face(std::string_view face_id, std::string_view line) {
 }
 
 void LvglView::speech_start() {
-  if (mode_ == Mode::Decision || mode_ == Mode::Status) set_mode(Mode::Face);
+  if (mode_ == Mode::Decision || mode_ == Mode::Status || mode_ == Mode::Progress ||
+      mode_ == Mode::Report)
+    set_mode(Mode::Face);
   speaking_ = true;
   layout_target_ = 1;
   set_line("", false);
@@ -494,6 +767,16 @@ void LvglView::speech_line(std::string_view text) {
 void LvglView::speech_end() {
   speaking_ = false;
   set_line("", false);
+}
+
+void LvglView::show_report(std::string_view text) {
+  boot_phase_ = -1;
+  speaking_ = false;
+  set_face("neutral", true);
+  set_mode(Mode::Report);
+  set_line(text, false);
+  layout_target_ = 1;
+  apply();
 }
 
 void LvglView::set_needs_you(bool on) {
@@ -518,7 +801,7 @@ void LvglView::set_hint(std::string_view yes, std::string_view no, const char* g
 
 int LvglView::hint_width(int letter_space) const {
   lv_point_t size;
-  lv_text_get_size(&size, lv_label_get_text(hint_), &charm_text_24, letter_space, 0, LV_COORD_MAX,
+  lv_text_get_size(&size, lv_label_get_text(hint_), text24(), letter_space, 0, LV_COORD_MAX,
                    LV_TEXT_FLAG_NONE);
   return size.x;
 }
@@ -615,6 +898,9 @@ void LvglView::on_screen_touch(lv_event_t* e) {
   if (code == LV_EVENT_PRESSED) {
     self->press_start_ = self->now_ == 0 ? 1 : self->now_;
     self->hold_fired_ = false;
+    lv_point_t point;
+    lv_indev_get_point(lv_indev_active(), &point);
+    self->press_y_ = point.y;
     return;
   }
   if (code != LV_EVENT_PRESSING) {
@@ -644,9 +930,13 @@ void LvglView::set_look(uint32_t glyph, bool calm) {
   glyph_ = glyph;
   lv_color_t ink = lv_color_hex(glyph);
   for (lv_obj_t* label : {eye_l_, eye_r_, mouth_, zzz_, line_, code_, hint_, title_, dots_,
-                          battery_text_, status_percent_})
+                          battery_text_, status_percent_, progress_title_, progress_heard_})
     lv_obj_set_style_text_color(label, ink, 0);
+  if (clock_) lv_obj_set_style_text_color(clock_, ink, 0);
   for (lv_obj_t* label : status_lines_) lv_obj_set_style_text_color(label, ink, 0);
+  for (lv_obj_t* label : progress_labels_) lv_obj_set_style_text_color(label, ink, 0);
+  lv_obj_set_style_bg_color(progress_list_, ink, LV_PART_SCROLLBAR);
+  lv_obj_set_style_bg_color(line_box_, ink, LV_PART_SCROLLBAR);
   lv_obj_set_style_border_color(battery_body_, ink, 0);
   lv_obj_set_style_bg_color(battery_fill_, ink, 0);
   lv_obj_set_style_bg_color(battery_nub_, ink, 0);
@@ -658,7 +948,7 @@ void LvglView::set_look(uint32_t glyph, bool calm) {
 void LvglView::set_battery(const Battery& battery, BatteryShow show) {
   last_battery_ = battery;
   battery_show_ = show;
-  if (show == BatteryShow::Hidden || mode_ == Mode::Status) {
+  if (show == BatteryShow::Hidden || mode_ == Mode::Status || mode_ == Mode::Progress) {
     hide(battery_, true);
     return;
   }
@@ -762,7 +1052,8 @@ void LvglView::on_screen_click(lv_event_t* e) {
     self->hold_fired_ = false;  // the release of a hold isn't a tap
     return;
   }
-  bool tappable = self->mode_ == Mode::Face || self->mode_ == Mode::Status;
+  bool tappable = self->mode_ == Mode::Face || self->mode_ == Mode::Status ||
+                  self->mode_ == Mode::Progress || self->mode_ == Mode::Report;
   if (tappable && self->tap_callback_) self->tap_callback_(self->tap_ctx_);
 }
 
@@ -775,7 +1066,10 @@ void LvglView::tick(uint32_t now) {
     next_glance_ = now + random(1100, 3300);
   }
   now_ = now;
-  if (press_start_ != 0 && !hold_fired_ && mode_ == Mode::Face && !options_.notch &&
+  // The status screen's hold works on the face and, on the report page, on the face above the
+  // text (the text itself is held only to scroll it).
+  bool holdable = mode_ == Mode::Face || (mode_ == Mode::Report && press_y_ < text_top_);
+  if (press_start_ != 0 && !hold_fired_ && holdable && !options_.notch &&
       now - press_start_ >= kHoldMs) {
     hold_fired_ = true;
     press_start_ = 0;
@@ -907,7 +1201,8 @@ void LvglView::place_zzz(int x, int y, float phase) {
 }
 
 void LvglView::apply() {
-  bool face_visible = (mode_ != Mode::Pin || options_.notch) && mode_ != Mode::Status;
+  bool face_visible =
+      (mode_ != Mode::Pin || options_.notch) && mode_ != Mode::Status && mode_ != Mode::Progress;
   hide(eye_l_, !face_visible);
   hide(eye_r_, !face_visible);
   if (!face_visible) {

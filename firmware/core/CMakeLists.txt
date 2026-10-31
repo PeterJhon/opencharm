@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
 project(charm_core C CXX)
 
+# MSVC reads sources in the system code page (936 here): the faces and Chinese text are UTF-8.
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 # charm-core: OpenCharm OS behaviour, written once for the device (ESP-IDF), the emulator
 # (WebAssembly) and host tests. It talks to the platform only through include/charm/hal.h.
 set(CMAKE_CXX_STANDARD 17)
@@ -92,7 +97,8 @@ if(CHARM_CORE_TESTS)
     target_include_directories(charm_ui_tests PRIVATE ${doctest_SOURCE_DIR} ${stb_SOURCE_DIR} src tests)
     target_link_libraries(charm_ui_tests PRIVATE charm_ui)
     target_compile_definitions(charm_ui_tests PRIVATE
-      CHARM_SNAPSHOT_DIR="${CMAKE_CURRENT_BINARY_DIR}/snapshots")
+      CHARM_SNAPSHOT_DIR="${CMAKE_CURRENT_BINARY_DIR}/snapshots"
+      CHARM_FULL_FONT="${CMAKE_CURRENT_SOURCE_DIR}/src/ui/fonts/charm_cjk_24_full.bin")
     add_test(NAME charm_ui_tests COMMAND charm_ui_tests)
   endif()
 endif()

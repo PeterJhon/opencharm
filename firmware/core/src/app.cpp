@@ -1,5 +1,6 @@
 #include "charm/app.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "generated/faces.h"
@@ -15,6 +16,8 @@ constexpr uint32_t kQuickTapsMs = 2000;  // three taps within this = dizzy
 constexpr size_t kPrerollFrames = 16;
 // Typed text charmd accepts (spec 001): not blank, at most 2,000 characters (code points).
 constexpr size_t kMaxTypedChars = 2000;
+// A text reply kept for the scrollable report; far more than a screenful, bounded for memory.
+constexpr size_t kMaxReportBytes = 32 * 1024;
 
 bool sendable(std::string_view text) {
   size_t chars = 0;
@@ -24,6 +27,23 @@ bool sendable(std::string_view text) {
     if (c != ' ' && c != '\t' && c != '\n' && c != '\r') blank = false;
   }
   return !blank && chars <= kMaxTypedChars;
+}
+
+// Collect a reply that is read, not spoken; a sentence per line. Past the cap the rest is cut on a
+// character boundary and marked with "…", so a runaway reply stays bounded for the board's memory.
+void append_report(std::string& report, std::string_view text) {
+  if (report.size() >= kMaxReportBytes) return;
+  if (!report.empty()) report += '\n';
+  if (text.empty()) return;  // a blank line, as the reply was written
+  size_t room = kMaxReportBytes - report.size();
+  if (text.size() <= room) {
+    report += text;
+    return;
+  }
+  size_t cut = room;
+  while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
+  report.append(text.substr(0, cut));
+  report += "…";
 }
 
 struct Reaction {
@@ -62,11 +82,11 @@ void App::react(const char* face, const char* line, uint32_t ms, uint32_t now,
   react_until_ = now + ms;
   then_face_ = then_face;
   then_ms_ = then_ms;
-  if (!status_open_) view_.show_face(face, line);
+  if (!status_open_ && !progress_open_ && !report_open_) view_.show_face(face, line);
 }
 
 void App::show_current() {
-  if (screen_ != Screen::Face || asking_ || status_open_) return;
+  if (screen_ != Screen::Face || asking_ || status_open_ || progress_open_ || report_open_) return;
   if (speaking_) return;  // the speech layout is on screen
   view_.show_face(asleep_ ? "sleepy" : std::string_view(face_), asleep_ ? "" : line_);
 }
@@ -119,6 +139,13 @@ void App::go(Screen screen) {
   if (screen != Screen::Connecting) setup_key_at_ = 0;
   if (screen != Screen::Face) {
     status_open_ = false;
+    progress_open_ = false;
+    progress_.clear();
+    heard_.clear();
+    report_.clear();
+    report_open_ = false;
+    report_hidden_ = false;
+    report_cancelled_ = false;
     if (battery_show_ != BatteryShow::Hidden) {
       battery_show_ = BatteryShow::Hidden;
       view_.set_battery(status_.battery, BatteryShow::Hidden);
@@ -168,18 +195,35 @@ void App::tick(uint32_t now) {
     }
   }
   if (status_open_ && now >= status_until_) close_status();
-  if (screen_ == Screen::Face && !asleep_ && !talking_ && !speaking_ && !key_down_ && !asking_ &&
-      !status_open_ && react_until_ == 0 && sleep_after_ms_ != 0 &&
+  if (progress_open_ && now >= progress_until_) close_progress();
+  // A report stays until a press or a tap, but not forever: falling asleep puts it away. It doesn't
+  // dim while it is read (scrolling isn't activity the App hears), so it stays legible.
+  if (screen_ == Screen::Face && report_open_ && !talking_ && !key_down_ && sleep_after_ms_ != 0 &&
       now - last_activity_ >= sleep_after_ms_) {
+    close_report();
+  }
+  if (screen_ == Screen::Face && !asleep_ && !talking_ && !speaking_ && !key_down_ && !asking_ &&
+      !status_open_ && !progress_open_ && !report_open_ && react_until_ == 0 &&
+      sleep_after_ms_ != 0 && now - last_activity_ >= sleep_after_ms_) {
     asleep_ = true;
     view_.show_face("sleepy", "");
   }
   if (screen_ == Screen::Face && !dimmed_ && !talking_ && !speaking_ && !key_down_ && !asking_ &&
-      now - last_activity_ >= options_.dim_after_ms) {
+      !progress_open_ && !report_open_ && now - last_activity_ >= options_.dim_after_ms) {
     dimmed_ = true;
     hal_.set_brightness(kDimPercent);
   }
   update_battery(now);
+  // The screen's clock runs between charmd's messages: a missed minute never freezes it.
+  if (clock_minutes_ >= 0) {
+    const int minutes = (clock_minutes_ + int((now - clock_synced_at_) / 60000u)) % 1440;
+    char text[6];
+    std::snprintf(text, sizeof text, "%02d:%02d", minutes / 60, minutes % 60);
+    if (clock_text_ != text) {
+      clock_text_ = text;
+      view_.set_clock(clock_text_);
+    }
+  }
   view_.tick(now);
 }
 
@@ -207,7 +251,12 @@ void App::end_ask() {
   if (speaking_) {
     view_.speech_start();
     if (!speech_line_.empty()) view_.speech_line(speech_line_);
+  } else if (report_hidden_ && !report_.empty()) {
+    report_hidden_ = false;
+    report_open_ = true;
+    view_.show_report(report_);
   } else {
+    report_hidden_ = false;
     view_.show_face(face_, line_);
   }
 }
@@ -221,6 +270,7 @@ void App::on_offline(std::string_view line, uint32_t) {
   can_battery_ = false;             // if its hello offers it
   asking_ = false;
   can_type_ = false;  // the next charmd says again in its hello
+  can_speak_ = false;
   end_talk(false);
   if (speaking_) stop_speech(false);
   set_needs_you(false);
@@ -239,6 +289,7 @@ void App::handle(const ServerMessage& m, uint32_t now) {
       session_id_ = m.session_id;
       can_type_ = m.accepts_text;
       can_battery_ = m.accepts_battery;
+      can_speak_ = m.accepts_speak;
       break;
     case ServerKind::PairCode:
       pair_code_ = m.code;
@@ -264,6 +315,10 @@ void App::handle(const ServerMessage& m, uint32_t now) {
     case ServerKind::Unlocked:
       face_ = "neutral";
       line_.clear();
+      heard_.clear();
+      progress_.clear();
+      progress_open_ = false;
+      clear_report();
       asleep_ = false;
       activity(now);
       go(Screen::Face);
@@ -287,9 +342,30 @@ void App::handle(const ServerMessage& m, uint32_t now) {
       go(Screen::Connecting);
       hal_.reconnect();
       break;
+    case ServerKind::Progress:
+      if (screen_ != Screen::Face) break;
+      activity(now);
+      progress_ = m.progress;
+      if (progress_.empty()) {
+        // The turn is over: the status screen's gesture comes back.
+        clear_progress();
+        break;
+      }
+      progress_until_ = now + options_.progress_ms;
+      if (progress_open_) view_.show_progress(progress_, heard_);
+      break;
     case ServerKind::Face:
       if (screen_ != Screen::Face) break;
       activity(now);
+      // A real agent state (a new turn, a failure, "it needs you") outranks the last reply's
+      // report.
+      if (m.state != "idle") clear_report();
+      // A new turn starts with nothing to show; its own progress follows. The turn's end sends an
+      // empty progress list, so the page doesn't linger over the finished face.
+      if (m.state == "thinking") {
+        clear_progress();
+        heard_.clear();  // the new turn's STT follows
+      }
       face_ = m.feeling.empty() ? face_for(m.state) : m.feeling;
       line_ = m.text;
       if (asking_) break;  // the question stays on screen; the face comes back after it
@@ -298,9 +374,14 @@ void App::handle(const ServerMessage& m, uint32_t now) {
       // A real agent state (thinking, a failure, "needs you") or a feeling shows at once; only the
       // plain idle face waits for a reaction (a greeting, a poke, being pleased) to finish.
       if (m.state != "idle" || !m.feeling.empty()) stop_reacting();
-      // "It needs you" outranks the status screen: the ring comes with the face that says why.
-      if (m.state == "needs_you") status_open_ = false;
-      if (!speaking_ && !key_down_ && react_until_ == 0 && !status_open_)
+      // "It needs you" outranks the status and progress screens: the ring comes with the face
+      // that says why.
+      if (m.state == "needs_you") {
+        status_open_ = false;
+        progress_open_ = false;
+      }
+      if (!speaking_ && !key_down_ && react_until_ == 0 && !status_open_ && !progress_open_ &&
+          !report_open_)
         view_.show_face(face_, line_);
       break;
     case ServerKind::Ask:
@@ -315,7 +396,12 @@ void App::handle(const ServerMessage& m, uint32_t now) {
       } else if (capturing_) {
         end_talk(false);
       }
-      status_open_ = false;  // a question matters more than the status screen
+      status_open_ = false;    // a question matters more than the status screen
+      progress_open_ = false;  // and more than the progress page
+      if (report_open_) {      // and more than the last reply's report, which comes back after it
+        report_open_ = false;
+        report_hidden_ = true;
+      }
       asking_ = true;
       key_answered_ = key_down_;  // a hold already in progress isn't an answer
       ask_id_ = m.id;
@@ -333,26 +419,68 @@ void App::handle(const ServerMessage& m, uint32_t now) {
       activity(now);
       speaking_ = true;
       status_open_ = false;
+      progress_open_ = false;  // speech takes the screen; holding the face brings the list back
       stop_reacting();
       asleep_ = false;
       speech_line_.clear();
+      // A new reply makes way for the last one's report; this one is collected to keep.
+      report_.clear();
+      report_open_ = false;
+      report_hidden_ = false;
+      report_cancelled_ = false;
+      tts_audio_ = false;
       if (!asking_) view_.speech_start();
       break;
     case ServerKind::TtsSentence:
       if (!speaking_) break;
       speech_line_ = m.text;
+      append_report(report_, m.text);
       if (!asking_) view_.speech_line(m.text);
       break;
     case ServerKind::TtsStop:
       if (!speaking_) break;
       speaking_ = false;
       speech_line_.clear();
-      if (!asking_) {
+      if (!tts_audio_ && !report_cancelled_ && !report_.empty()) {
+        // Read, not spoken: the whole reply stays on a page that scrolls, until a press or a tap.
+        // While a question has the screen, it waits and comes back when the question is answered.
+        if (asking_) {
+          report_hidden_ = true;
+        } else {
+          report_open_ = true;
+          view_.show_report(report_);
+        }
+      } else if (!asking_) {
         view_.speech_end();
         react("happy", "", options_.pleased_ms, now);  // pleased it could help
       }
+      report_cancelled_ = false;
+      tts_audio_ = false;
       break;
     case ServerKind::Stt:
+      // What the person said (spec 003): a short line while the agent starts, and the top of the
+      // progress page for the rest of the turn. Never spoken.
+      if (screen_ != Screen::Face || m.text.empty()) break;
+      activity(now);
+      heard_ = m.text;
+      if (asking_ || speaking_ || status_open_) break;
+      if (progress_open_) {
+        view_.show_progress(progress_, heard_);
+        break;
+      }
+      line_ = "You · " + heard_;
+      view_.show_face(face_, line_);
+      break;
+    case ServerKind::Clock: {
+      // The computer's local time; the charm shows it and keeps it ticking between messages.
+      int hours = (m.clock[0] - '0') * 10 + (m.clock[1] - '0');
+      int minutes = (m.clock[3] - '0') * 10 + (m.clock[4] - '0');
+      clock_minutes_ = hours * 60 + minutes;
+      clock_synced_at_ = now;
+      clock_text_ = m.clock;
+      view_.set_clock(clock_text_);
+      break;
+    }
     case ServerKind::Llm:
     case ServerKind::Unknown:
       break;
@@ -360,7 +488,10 @@ void App::handle(const ServerMessage& m, uint32_t now) {
 }
 
 void App::on_audio(const uint8_t* data, size_t size) {
-  if (speaking_ && screen_ == Screen::Face) hal_.play_audio(data, size);
+  if (!speaking_) return;
+  // Audio means this reply was spoken, not only read: it ends on the face, not as a report.
+  tts_audio_ = true;
+  if (screen_ == Screen::Face) hal_.play_audio(data, size);
 }
 
 void App::on_mic_frame(const uint8_t* data, size_t size) {
@@ -391,12 +522,15 @@ void App::on_key(bool down, uint32_t now) {
     key_answered_ = false;
     show_battery_for_a_moment(now);
     update_battery(now);
-    if (status_open_) {
-      // This press only closes the status screen: no talk, no stop, nothing else.
+    if (status_open_ || progress_open_) {
+      // This press only closes the screen: no talk, no stop, nothing else.
       key_answered_ = true;
-      close_status();
+      if (status_open_) close_status();
+      if (progress_open_) close_progress();
       return;
     }
+    // A report is read-only: a press dismisses it, and if the key stays down it talks as usual.
+    if (report_open_) close_report();
     if (!asking_) {
       wake(now);
       stop_reacting();
@@ -446,6 +580,14 @@ void App::on_touch_face(uint32_t now) {
   if (was_dimmed) show_battery_for_a_moment(now);  // a person woke it
   if (status_open_) {
     close_status();
+    return;
+  }
+  if (progress_open_) {
+    close_progress();
+    return;
+  }
+  if (report_open_) {
+    close_report();
     return;
   }
   if (screen_ != Screen::Face || speaking_ || key_down_ || asking_) return;
@@ -518,6 +660,8 @@ void App::end_talk(bool tell_server) {
 
 void App::stop_speech(bool tell_server) {
   speaking_ = false;
+  report_cancelled_ = true;  // what was read so far isn't kept when the reply is stopped
+  report_.clear();
   if (tell_server) hal_.send_text(client_abort(session_id_, "key_pressed"));
   hal_.stop_audio();
   view_.speech_end();
@@ -538,10 +682,29 @@ void App::on_touch_hold(uint32_t now) {
   if (screen_ != Screen::Face || speaking_ || talking_ || key_down_ || asking_) return;
   if (wake(now) || was_dimmed) return;  // the first touch only wakes it
   stop_reacting();
+  // While the agent works, the same hold opens what it is doing; the status screen keeps its
+  // gesture whenever there is no progress to show (spec 017).
+  if (!progress_.empty()) {
+    progress_open_ = true;
+    progress_until_ = now + options_.progress_ms;
+    update_battery(now);  // hidden on the page, as on the status screen
+    view_.show_progress(progress_, heard_);
+    return;
+  }
   status_open_ = true;
   status_until_ = now + options_.status_ms;
   update_battery(now);  // hidden first: the status screen shows it in large type
   view_.show_status(status_);
+}
+
+// A line tapped on the progress page: charmd reads it with the turn's own voice; the agent keeps
+// working. Only a charmd that offered `features.speak` gets the message (an older one would close
+// the connection on it).
+void App::on_progress_tap(std::string_view text, uint32_t now) {
+  if (!progress_open_ || screen_ != Screen::Face || !can_speak_) return;
+  if (text.empty() || text.size() > 200) return;
+  activity(now);
+  hal_.send_text(client_speak(text));
 }
 
 // charmd hears the battery once the face is unlocked and on every change (spec 009): before that
@@ -559,7 +722,45 @@ void App::report_battery() {
 void App::close_status() {
   if (!status_open_) return;
   status_open_ = false;
+  if (report_open_) {  // opened over a report: the report is still there to read
+    view_.show_report(report_);
+    return;
+  }
   view_.show_face(asleep_ ? "sleepy" : std::string_view(face_), asleep_ ? "" : line_);
+}
+
+void App::close_progress() {
+  if (!progress_open_) return;
+  progress_open_ = false;
+  if (report_open_) {
+    view_.show_report(report_);
+    return;
+  }
+  view_.show_face(asleep_ ? "sleepy" : std::string_view(face_), asleep_ ? "" : line_);
+}
+
+void App::clear_progress() {
+  progress_.clear();
+  close_progress();
+}
+
+// The report page: a press or a tap puts it away and the face comes back. Its text is dropped with
+// it (the next reply collects its own).
+void App::close_report() {
+  report_hidden_ = false;
+  if (!report_open_) return;
+  report_open_ = false;
+  report_.clear();
+  view_.show_face(asleep_ ? "sleepy" : std::string_view(face_), asleep_ ? "" : line_);
+}
+
+// The report no longer belongs on screen (a new turn, a lock), without drawing: the caller shows
+// what comes next.
+void App::clear_report() {
+  report_.clear();
+  report_open_ = false;
+  report_hidden_ = false;
+  report_cancelled_ = false;
 }
 
 // Hidden at rest; the level for a moment after waking or a key press, and the whole time on USB;
@@ -567,7 +768,8 @@ void App::close_status() {
 void App::update_battery(uint32_t now) {
   const Battery& b = status_.battery;
   BatteryShow show = BatteryShow::Hidden;
-  if (b.percent != kUnknown && screen_ == Screen::Face && !status_open_ && !booting_) {
+  if (b.percent != kUnknown && screen_ == Screen::Face && !status_open_ && !progress_open_ &&
+      !booting_) {
     if (b.usb || now < battery_until_)
       show = BatteryShow::Level;
     else if (b.percent < options_.battery_low)

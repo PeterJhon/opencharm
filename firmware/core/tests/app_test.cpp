@@ -63,6 +63,11 @@ struct FakeView : charm::View {
   void speech_start() override { calls.push_back("speech_start"); }
   void speech_line(std::string_view t) override { calls.push_back("speech " + std::string(t)); }
   void speech_end() override { calls.push_back("speech_end"); }
+  void show_report(std::string_view t) override {
+    report = std::string(t);
+    calls.push_back("report");
+  }
+  std::string report;
   void set_needs_you(bool on) override { calls.push_back(on ? "ring on" : "ring off"); }
   void squish() override { calls.push_back("squish"); }
   void set_look(uint32_t glyph, bool calm) override {
@@ -70,6 +75,11 @@ struct FakeView : charm::View {
     std::snprintf(hex, sizeof hex, "%06X", unsigned(glyph));
     calls.push_back(std::string("look #") + hex + (calm ? " calm" : " full"));
   }
+  void set_clock(std::string_view hm) override {
+    clock = std::string(hm);
+    calls.push_back("clock " + clock);
+  }
+  std::string clock;
   void set_voice_level(float level) override { voice = level; }
   float voice = -1;
   void show_decision(std::string_view t, std::string_view yes, std::string_view no) override {
@@ -92,6 +102,14 @@ struct FakeView : charm::View {
     calls.push_back("status " + std::to_string(s.battery.percent));
   }
   charm::Status status;
+  void show_progress(const std::vector<charm::ProgressEntry>& entries,
+                     std::string_view heard) override {
+    progress = entries;
+    progress_heard = std::string(heard);
+    calls.push_back("progress " + std::to_string(entries.size()));
+  }
+  std::vector<charm::ProgressEntry> progress;
+  std::string progress_heard;
   bool saw(const std::string& call) const {
     for (const auto& c : calls)
       if (c == call) return true;
@@ -458,11 +476,155 @@ TEST_CASE("after speaking it looks pleased for a moment, even when the idle face
   r.at(5000);
   r.server(R"({"type":"tts","state":"start"})");
   r.server(R"({"type":"tts","state":"sentence_start","text":"Done."})");
+  uint8_t packet[4] = {1, 2, 3, 4};
+  r.app.on_audio(packet, sizeof packet);  // a spoken reply, not a text report
   r.server(R"({"type":"tts","state":"stop"})");
   r.server(R"({"type":"charm","op":"face","state":"idle"})");
   CHECK(r.view.last() == "face happy");
   r.at(7000);
   CHECK(r.view.last() == "face neutral");
+}
+
+TEST_CASE("a reply read as text stays as a report, in full, until a press or a tap") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"First, I read the files."})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"Then I ran the tests."})");
+  CHECK_FALSE(r.app.report_open());  // still being read sentence by sentence
+  r.server(R"({"type":"tts","state":"stop"})");
+  CHECK(r.app.report_open());
+  CHECK(r.view.report == "First, I read the files.\nThen I ran the tests.");
+  CHECK(r.view.last() == "report");
+  CHECK_FALSE(r.view.saw("speech_end"));  // no pleased face over it
+  // The turn's idle face doesn't take the report away.
+  r.server(R"({"type":"charm","op":"face","state":"idle"})");
+  CHECK(r.app.report_open());
+  CHECK(r.view.last() == "report");
+  // A short press puts it away and never talks; its release does nothing more.
+  r.at(20000);
+  r.app.on_key(true, r.now);
+  CHECK_FALSE(r.app.report_open());
+  r.app.on_key(false, r.now);
+  CHECK_FALSE(r.app.talking());
+  CHECK_FALSE(r.hal.sent_contains(R"("type":"listen")"));
+  CHECK(r.view.last() == "face neutral");
+}
+
+TEST_CASE("holding the key while the report is up still talks") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"All done."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.at(10000);
+  r.app.on_key(true, r.now);
+  CHECK_FALSE(r.app.report_open());
+  r.at(10300);
+  CHECK(r.app.talking());
+  CHECK(r.hal.sent_contains(R"("type":"listen")"));
+  r.app.on_key(false, r.now);
+  CHECK_FALSE(r.app.talking());
+}
+
+TEST_CASE("holding the face while the report is up opens the status screen, then the report") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"All done."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.at(8000);
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.status_open());
+  CHECK(r.view.last().rfind("status", 0) == 0);
+  r.app.on_touch_face(r.now);
+  CHECK_FALSE(r.app.status_open());
+  CHECK(r.app.report_open());
+  CHECK(r.view.last() == "report");
+}
+
+TEST_CASE("a report keeps the reply's blank lines") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"## Status"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":""})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"- one"})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  CHECK(r.app.report_open());
+  CHECK(r.view.report == "## Status\n\n- one");
+}
+
+TEST_CASE("a tap puts the report away; a new turn takes its place") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"All done."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.at(8000);
+  r.app.on_touch_face(r.now);
+  CHECK_FALSE(r.app.report_open());
+  CHECK(r.view.last() == "face neutral");
+
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"Here it is."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  CHECK_FALSE(r.app.report_open());  // a new turn starts with its face
+  CHECK(r.view.last() == "face thinking");
+}
+
+TEST_CASE("a question covers the report, and the report comes back after it") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"I can do that."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.server(
+      R"({"type":"charm","op":"ask","id":"q1","text":"Claude Code wants to write notes.md."})");
+  CHECK_FALSE(r.app.report_open());
+  CHECK(r.app.asking());
+  CHECK(r.view.last() == "decision Claude Code wants to write notes.md. | ALLOW / NO");
+  r.server(R"({"type":"charm","op":"ask_end","id":"q1"})");
+  CHECK(r.app.report_open());
+  CHECK(r.view.report == "I can do that.");
+  CHECK(r.view.last() == "report");
+}
+
+TEST_CASE("stopping a reply read as text leaves no report behind") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"Let me explain."})");
+  r.hold(10000, 10050);
+  CHECK(r.hal.sent_contains(R"("reason":"key_pressed")"));
+  CHECK_FALSE(r.app.report_open());
+  CHECK(r.view.saw("speech_end"));
+  CHECK(r.view.last() == "face neutral");
+  r.server(R"({"type":"tts","state":"stop"})");
+  CHECK_FALSE(r.app.report_open());
+}
+
+TEST_CASE("the report stays legible while it is read, and sleep puts it away") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"tts","state":"start"})");
+  r.server(R"({"type":"tts","state":"sentence_start","text":"A long reply."})");
+  r.server(R"({"type":"tts","state":"stop"})");
+  REQUIRE(r.app.report_open());
+  r.at(200000);  // past the dim delay, before sleep
+  CHECK_FALSE(r.app.dimmed());
+  CHECK(r.app.report_open());
+  r.at(242000);  // the quiet time: it falls asleep and the report goes
+  CHECK_FALSE(r.app.report_open());
+  CHECK(r.app.asleep());
+  CHECK(r.view.last() == "face sleepy");
 }
 
 TEST_CASE("a face that needs the person shows at once, over any reaction") {
@@ -973,6 +1135,15 @@ TEST_CASE("the status screen doesn't open over a talk, speech, a question or ano
   CHECK_FALSE(r.app.status_open());
 }
 
+TEST_CASE("a long question reaches the decision layout in full, for it to scroll") {
+  Rig r;
+  r.unlocked();
+  const std::string text = "Claude Code wants to " + std::string(400, 'x');
+  r.server(R"({"type":"charm","op":"ask","id":"q9","text":")" + text + R"("})");
+  CHECK(r.view.last() == "decision " + text + " | ALLOW / NO");
+  CHECK(r.app.asking());
+}
+
 TEST_CASE("a question or speech takes over from the status screen; a face change waits") {
   Rig r;
   r.unlocked();
@@ -1156,4 +1327,138 @@ TEST_CASE("an older charmd that doesn't offer it never gets the battery") {
   r.app.on_status(battery_at(50), r.now);
   r.app.on_status(battery_at(40), r.now + 1000);
   CHECK_FALSE(r.hal.sent_contains(R"("op":"battery")"));
+}
+
+// Progress on the charm (spec 017).
+namespace {
+
+const char* kHelloSpeak =
+    R"({"type":"hello","transport":"websocket","session_id":"s1","audio_params":{"format":"opus","sample_rate":24000,"channels":1,"frame_duration":60},"features":{"speak":true}})";
+const char* kProgress =
+    R"({"type":"charm","op":"progress","entries":[{"text":"Read the spec","status":"completed"},{"text":"Run npm test","status":"in_progress"},{"text":"修复中文显示","status":"pending"}]})";
+
+}  // namespace
+
+TEST_CASE("holding the face while the agent works opens its progress, and a tap reads a line") {
+  Rig r;
+  r.unlocked();
+  r.server(kHelloSpeak);  // charmd offers to read a tapped line
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(kProgress);
+  CHECK_FALSE(r.app.progress_open());
+
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  CHECK(r.view.last() == "progress 3");
+  REQUIRE(r.view.progress.size() == 3);
+  CHECK(r.view.progress[1].text == "Run npm test");
+  CHECK(r.view.progress[2].text == "修复中文显示");
+
+  r.app.on_progress_tap("Run npm test", r.now);
+  CHECK(r.hal.sent_contains(R"("op":"speak","text":"Run npm test")"));
+
+  // A press closes the page and does nothing else: no talk, no mic.
+  r.hal.events.clear();
+  r.app.on_key(true, r.now);
+  CHECK_FALSE(r.app.progress_open());
+  r.at(r.now + 400);
+  r.app.on_key(false, r.now);
+  CHECK_FALSE(r.app.talking());
+  CHECK(r.hal.events.empty());
+  CHECK_FALSE(r.hal.sent_contains(R"("state":"start")"));
+}
+
+TEST_CASE("the progress page yields to speech, a question and the end of the turn") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(kProgress);
+
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  r.server(R"({"type":"tts","state":"start","session_id":"s1"})");
+  CHECK_FALSE(r.app.progress_open());
+  CHECK(r.view.last() == "speech_start");
+  r.server(R"({"type":"tts","state":"stop","session_id":"s1"})");
+
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  r.server(kAskEarly);
+  CHECK_FALSE(r.app.progress_open());
+  CHECK(r.view.last() == "decision Allow? | ALLOW / NO");
+  r.server(R"({"type":"charm","op":"ask_end","id":"q0"})");
+
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  // The turn is over: charmd sends an empty list, and the status gesture comes back.
+  r.server(R"({"type":"charm","op":"progress","entries":[]})");
+  CHECK_FALSE(r.app.progress_open());
+  CHECK_FALSE(r.hal.sent_contains(R"("op":"speak")"));
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.status_open());
+  CHECK_FALSE(r.app.progress_open());
+}
+
+TEST_CASE("a tap on the progress page's background closes it; a new turn starts with nothing") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(kProgress);
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  r.app.on_touch_face(r.now);
+  CHECK_FALSE(r.app.progress_open());
+  CHECK_FALSE(r.app.status_open());
+
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");  // a new turn
+  CHECK_FALSE(r.app.progress_open());
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.status_open());  // nothing to show yet, so the status screen
+}
+
+TEST_CASE("a charm whose charmd doesn't offer speak sends nothing when a line is tapped") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(kProgress);
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  r.app.on_progress_tap("Run npm test", r.now);
+  CHECK_FALSE(r.hal.sent_contains(R"("op":"speak")"));
+}
+
+TEST_CASE("what the person said shows on the face and at the top of the progress page") {
+  Rig r;
+  r.unlocked();
+  r.server(R"({"type":"charm","op":"face","state":"thinking"})");
+  r.server(R"({"type":"stt","session_id":"s1","text":"修复进度显示"})");
+  CHECK(r.view.last() == "face thinking | You · 修复进度显示");
+  r.server(kProgress);
+  r.app.on_touch_hold(r.now);
+  CHECK(r.app.progress_open());
+  CHECK(r.view.last() == "progress 3");
+  CHECK(r.view.progress_heard == "修复进度显示");
+}
+
+TEST_CASE("the computer's clock shows on the charm and keeps ticking between messages") {
+  Rig r;
+  r.unlocked();
+  CHECK(r.view.clock.empty());
+
+  r.server(R"({"type":"charm","op":"clock","time":"21:55"})");
+  CHECK(r.view.clock == "21:55");
+  CHECK(r.view.last() == "clock 21:55");
+
+  // A missed minute message doesn't freeze it: the App counts from the one it got.
+  r.at(r.now + 60'000);
+  CHECK(r.view.clock == "21:56");
+  r.at(r.now + 59 * 60'000);
+  CHECK(r.view.clock == "22:55");
+
+  // Midnight wraps.
+  r.server(R"({"type":"charm","op":"clock","time":"23:59"})");
+  r.at(r.now + 60'000);
+  CHECK(r.view.clock == "00:00");
 }

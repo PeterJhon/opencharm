@@ -6,7 +6,7 @@
 #define LV_COLOR_FORMAT_DEFAULT LV_COLOR_FORMAT_RGB565 /* the charm's AMOLED is RGB565 */
 #define LV_USE_OS LV_OS_NONE          /* the platform calls lv_timer_handler() from one loop */
 #define LV_USE_STDLIB_MALLOC LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (512U * 1024U)
+#define LV_MEM_SIZE (2U * 1024U * 1024U)
 #define LV_DEF_REFR_PERIOD 16
 #define LV_DPI_DEF 220
 
@@ -19,6 +19,10 @@
 
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
+
+/* The board's full CJK font is a binary font read from flash through a memory buffer. */
+#define LV_USE_FS_MEMFS 1
+#define LV_FS_MEMFS_LETTER 65 /* 'A' */
 
 #define LV_USE_LABEL 1
 #define LV_USE_BUTTON 1

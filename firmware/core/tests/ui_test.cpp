@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <string>
 #include <utility>
@@ -9,6 +11,10 @@
 #include "doctest/doctest.h"
 #include "headless.h"
 #include "ui/lvgl_view.h"
+
+extern "C" {
+LV_FONT_DECLARE(charm_cjk_24);
+}
 
 namespace {
 
@@ -38,9 +44,16 @@ struct Screen {
   // Motion tests keep a finger down to hold the eyes still; for them a hold opens nothing.
   bool holds = true;
 
-  Screen(int w, int h, bool round, charm::Build build = {})
+  static charm::ViewOptions view_options(bool round, const lv_font_t* cjk) {
+    charm::ViewOptions o;
+    o.round = round;
+    o.cjk = cjk;
+    return o;
+  }
+
+  Screen(int w, int h, bool round, charm::Build build = {}, const lv_font_t* cjk = nullptr)
       : screen(w, h),
-        view(screen.display(), charm::ViewOptions{round}),
+        view(screen.display(), view_options(round, cjk)),
         app(hal, view, options(build)) {
     view.on_pin(
         [](void* ctx, const char* pin) {
@@ -58,6 +71,12 @@ struct Screen {
         [](void* ctx) {
           auto* self = static_cast<Screen*>(ctx);
           if (self->holds) self->app.on_touch_hold(self->now);
+        },
+        this);
+    view.on_progress_tap(
+        [](void* ctx, const char* text) {
+          auto* self = static_cast<Screen*>(ctx);
+          self->app.on_progress_tap(text, self->now);
         },
         this);
     app.start(0);
@@ -140,6 +159,19 @@ TEST_CASE("speech moves the eyes up and types the line underneath") {
   CHECK(s.eye(-0.125f, 0.22f) > 100);                  // eyes smaller and up top
   CHECK(s.screen.count_lit(40, 240, 440, 400) > 300);  // the typed line from half-height down
   CHECK(s.screen.count_lit(0, 216, 480, 238) == 0);    // a clear gap: the mouth never touches it
+}
+
+TEST_CASE("Chinese speech is drawn with the font's Han fallback") {
+  for (bool round : {false, true}) {
+    const int side = round ? 466 : 480;
+    Screen s(side, side, round);
+    s.unlocked();
+    s.server(R"({"type":"tts","state":"start"})");
+    s.server(R"({"type":"tts","state":"sentence_start","text":"今天天气不错，我们出去走走吧。"})");
+    s.at(s.now + 2000);
+    s.screen.save_png(round ? "speech-chinese-466-round" : "speech-chinese-480");
+    CHECK(s.screen.count_lit(40, 240, side - 40, 400) > 300);
+  }
 }
 
 TEST_CASE("the pairing screen shows the code big") {
@@ -235,10 +267,20 @@ TEST_CASE("a question shows the decision layout: small face, the question, the h
     int hint_top = int(size * (round ? 0.835f : 0.85f));
     int lit_hint = s.screen.count_lit(0, hint_top, size, size);
     s.server(
-        R"({"type":"charm","op":"ask","id":"q9","text":"Claude Code wants to write a very long file name that goes on and on and on and on and on and never stops.md"})");
+        R"({"type":"charm","op":"ask","id":"q9","text":"Claude Code wants to run npm test -- --runInBand in the workspace, then read every failing test, edit src/voice/language.ts and packages/charmd/src/turn/turn.ts, and run the whole suite again before reporting back with the exact commands and their output."})");
     s.screen.save_png(round ? "decision-long-466-round" : "decision-long-480");
     CHECK(s.screen.count_lit(0, hint_top, size, size) == lit_hint);    // the same hint
     if (round) CHECK(s.screen.count_lit(0, hint_top, 40, size) == 0);  // the hint fits the circle
+    // The whole task is there: the three-line window scrolls to its end.
+    REQUIRE(s.view.decision_text_overflows());
+    CHECK(s.view.decision_scroll_y() == 0);
+    s.screen.press(size / 2, int(size * 0.64f));
+    for (int i = 1; i <= 8; ++i) s.screen.move(size / 2, int(size * 0.64f) - i * 25);
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK(s.view.decision_scroll_y() > 0);
+    s.screen.save_png(round ? "decision-long-scrolled-466-round" : "decision-long-scrolled-480");
+    CHECK(s.app.asking());  // reading the task never answers it
     s.server(R"({"type":"charm","op":"ask_end","id":"q9"})");
     s.server(
         R"({"type":"charm","op":"ask","id":"q1","text":"Claude Code wants to write notes/plants.md."})");
@@ -254,6 +296,66 @@ TEST_CASE("a question shows the decision layout: small face, the question, the h
     CHECK(s.screen.count_colour(0, 0, size, size, 0xFF5A1F, 60) == 0);
     CHECK(s.screen.count_lit(40, int(size * 0.80f), size - 40, int(size * 0.92f)) == 0);
   }
+}
+
+TEST_CASE("a reply read as text is a report that scrolls to its very end") {
+  for (bool round : {false, true}) {
+    int size = round ? 466 : 480;
+    Screen s(size, size, round);
+    s.unlocked();
+    s.server(R"({"type":"tts","state":"start"})");
+    s.server(
+        R"({"type":"tts","state":"sentence_start","text":"First I read the files, then I ran the whole test suite and fixed what failed, and after that I updated the notes so the next person knows what changed."})");
+    s.server(
+        R"({"type":"tts","state":"sentence_start","text":"Everything passes now: the branch is ready for review."})");
+    s.server(R"({"type":"tts","state":"stop"})");
+    CHECK(s.app.report_open());
+    CHECK(s.view.report_text().find("Everything passes now") != std::string::npos);
+    s.screen.save_png(round ? "report-466-round" : "report-480");
+    // The whole reply is there, and the page scrolls from its first line to its last.
+    REQUIRE(s.view.report_text_overflows());
+    CHECK(s.view.report_scroll_y() == 0);
+    s.screen.press(size / 2, int(size * 0.70f));
+    for (int i = 1; i <= 8; ++i) s.screen.move(size / 2, int(size * 0.70f) - i * 25);
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK(s.view.report_scroll_y() > 0);
+    s.screen.save_png(round ? "report-scrolled-466-round" : "report-scrolled-480");
+    CHECK(s.app.report_open());  // reading it never closes it
+    // The turn's idle face doesn't take it away either.
+    s.server(R"({"type":"charm","op":"face","state":"idle"})");
+    CHECK(s.app.report_open());
+    // Holding the face above the text opens the status screen; a tap brings the report back.
+    s.screen.press(size / 2, int(size * 0.30f));
+    s.at(s.now + 1200);
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK(s.app.status_open());
+    s.screen.press(size / 2, int(size * 0.50f));
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK_FALSE(s.app.status_open());
+    CHECK(s.app.report_open());
+    // A plain tap on the text closes it and brings the face back.
+    s.screen.press(size / 2, int(size * 0.70f));
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK_FALSE(s.app.report_open());
+  }
+}
+
+TEST_CASE("a report shows the reply as written, markdown lines and blanks included") {
+  Screen s(480, 480, false);
+  s.unlocked();
+  s.server(R"({"type":"tts","state":"start"})");
+  s.server(R"({"type":"tts","state":"sentence_start","text":"## Status"})");
+  s.server(R"({"type":"tts","state":"sentence_start","text":""})");
+  s.server(R"({"type":"tts","state":"sentence_start","text":"- first point"})");
+  s.server(R"({"type":"tts","state":"sentence_start","text":"| A | B |"})");
+  s.server(R"({"type":"tts","state":"stop"})");
+  CHECK(s.app.report_open());
+  CHECK(s.view.report_text() == "## Status\n\n- first point\n| A | B |");
+  s.screen.save_png("report-markdown-480");
 }
 
 TEST_CASE("long speech scrolls like captions and never runs off the screen") {
@@ -447,6 +549,8 @@ TEST_CASE("on a notch, speech opens the panel: captions, and the mouth just belo
                            Notch::kStrip + 50) > 20);  // the mouth, talking
   n.at(n.now + 2000);
   CHECK(n.screen.count_lit(40, Notch::kStrip + 60, Notch::kW - 40, Notch::kH - 60) > 300);
+  uint8_t packet[4] = {1, 2, 3, 4};
+  n.app.on_audio(packet, sizeof packet);  // a spoken reply; a text report would stay open
   n.server(R"({"type":"tts","state":"stop"})");
   n.server(R"({"type":"charm","op":"face","state":"idle"})");
   n.at(n.now + 1500);
@@ -963,4 +1067,139 @@ TEST_CASE("Wi-Fi setup and no Wi-Fi read on the connecting screen, on both shape
     CHECK(s.screen.count_lit(0, size / 2, size, size) > 500);  // the line is drawn
     if (round) CHECK(s.screen.count_lit(0, size - 60, 60, size) == 0);
   }
+}
+
+TEST_CASE("progress: a scrollable list on both shapes, and a tapped line asks for speech") {
+  for (auto [size, round] : {std::pair{480, false}, std::pair{466, true}}) {
+    Screen s(size, size, round);
+    s.unlocked();
+    s.server(
+        R"({"type":"hello","transport":"websocket","session_id":"s1","audio_params":{"format":"opus","sample_rate":24000,"channels":1,"frame_duration":60},"features":{"speak":true}})");
+    s.server(R"({"type":"charm","op":"face","state":"thinking"})");
+    std::string entries;
+    for (int i = 0; i < 12; ++i) {
+      if (i) entries += ",";
+      entries += i == 9    ? R"({"text":"修复中文显示错误","status":"in_progress"})"
+                 : i == 10 ? R"({"text":"Run npm test","status":"completed"})"
+                           : std::string(R"({"text":"step )") + std::to_string(i) +
+                                 R"(" ,"status":"completed"})";
+    }
+    s.server(R"({"type":"charm","op":"progress","entries":[)" + entries + "]}");
+
+    s.screen.press(size / 2, size / 2);
+    s.at(s.now + 600);
+    s.at(s.now + 600);
+    CHECK(s.app.progress_open());
+    s.screen.release();
+    s.at(s.now + 100);
+    CHECK(s.app.progress_open());  // letting go of the hold isn't a tap
+    std::string text = s.view.progress_text();
+    CHECK(text.find("step 0") != std::string::npos);
+    CHECK(text.find("修复中文显示错误") != std::string::npos);
+    CHECK(text.find("Run npm test") != std::string::npos);
+    s.screen.save_png(round ? "progress-466" : "progress-480");
+    lv_area_t list;
+    REQUIRE(s.view.progress_list_area(list));
+    const float top_fraction = round ? 0.20f : 0.15f;
+    const float bottom_fraction = round ? 0.86f : 0.90f;
+    CHECK(list.y1 >= int(size * top_fraction) - 1);
+    CHECK(list.y2 <= int(size * bottom_fraction) + 1);
+    // A scrolled row is cut at the list's top edge, never drawn over the title.
+    CHECK(s.screen.count_lit(0, int(size * 0.12f), int(size * 0.35f), int(size * top_fraction)) ==
+          0);
+    if (round) {  // nothing in the corners of a round screen
+      CHECK(s.screen.count_lit(0, 0, 50, 50) == 0);
+      CHECK(s.screen.count_lit(size - 50, size - 50, size, size) == 0);
+    }
+
+    // Drag up: the list scrolls, and the drag doesn't read a line.
+    lv_area_t last;
+    REQUIRE(s.view.progress_row_area(11, last));
+    const int before = last.y1;
+    s.screen.press(size / 2, int(size * 0.75f));
+    for (int i = 1; i <= 6; ++i) s.screen.move(size / 2, int(size * 0.75f) - i * 30);
+    s.screen.release();
+    s.at(s.now + 200);
+    CHECK(s.app.progress_open());
+    REQUIRE(s.view.progress_row_area(11, last));
+    CHECK(last.y1 < before);
+
+    // A tap on a visible line sends it to charmd to read.
+    lv_area_t row;
+    REQUIRE(s.view.progress_row_area(11, row));
+    s.screen.click((row.x1 + row.x2) / 2, (row.y1 + row.y2) / 2);
+    s.at(s.now + 100);
+    bool spoke = false;
+    for (const auto& message : s.hal.sent)
+      if (message.find("\"op\":\"speak\"") != std::string::npos) spoke = true;
+    CHECK(spoke);
+  }
+}
+
+TEST_CASE("the progress page shows what the person said above the list") {
+  for (auto [size, round] : {std::pair{480, false}, std::pair{466, true}}) {
+    Screen s(size, size, round);
+    s.unlocked();
+    s.server(R"({"type":"charm","op":"face","state":"thinking"})");
+    s.server(
+        R"({"type":"stt","session_id":"s1","text":"帮我把测试跑一遍，然后修复失败的那几个。"})");
+    s.screen.save_png(round ? "heard-466-round" : "heard-480");
+    s.server(
+        R"({"type":"charm","op":"progress","entries":[{"text":"Read the spec","status":"completed"},{"text":"Run npm test","status":"in_progress"}]})");
+    s.app.on_touch_hold(s.now);
+    s.at(s.now + 100);
+    REQUIRE(s.app.progress_open());
+    CHECK(s.view.progress_heard_text() == "You · 帮我把测试跑一遍，然后修复失败的那几个。");
+    CHECK(s.view.progress_text().find("Run npm test") != std::string::npos);
+    lv_area_t list;
+    REQUIRE(s.view.progress_list_area(list));
+    CHECK(list.y1 > int(size * 0.20f));
+    s.screen.save_png(round ? "progress-heard-466-round" : "progress-heard-480");
+  }
+}
+
+TEST_CASE("the board's full CJK binary font covers characters outside the small C font") {
+  Headless init(480, 480);  // lv_init registers the memory-mapped FS the font is read through.
+  static std::vector<uint8_t> data;
+  std::ifstream in(CHARM_FULL_FONT, std::ios::binary);
+  REQUIRE(in);
+  data.assign(std::istreambuf_iterator<char>(in), {});
+  REQUIRE(data.size() > 1'000'000);
+  lv_binfont_dsc_t dsc_font = {};
+  dsc_font.buffer = data.data();
+  dsc_font.buffer_size = uint32_t(data.size());
+  dsc_font.dynamic_glyph_load = true;
+  lv_font_t* full = lv_binfont_create_ex(&dsc_font);
+  REQUIRE(full != nullptr);
+
+  lv_font_glyph_dsc_t dsc;
+  CHECK(lv_font_get_glyph_dsc(full, &dsc, 0x3400, 0));  // 㐀, CJK Extension A
+  CHECK_FALSE(lv_font_get_glyph_dsc(&charm_cjk_24, &dsc, 0x3400, 0));
+
+  Screen s(480, 480, false, {}, full);
+  s.unlocked();
+  s.server(R"({"type":"charm","op":"face","state":"thinking","text":"㐀龘齉"})");
+  s.screen.save_png("face-rare-cjk-480");
+  CHECK(s.screen.count_lit(80, int(480 * 0.50f), 400, int(480 * 0.75f)) > 20);
+}
+
+TEST_CASE("the computer's clock sits at the screen's top right; the notch has none") {
+  for (auto [size, round] : {std::pair{480, false}, std::pair{466, true}}) {
+    Screen s(size, size, round);
+    s.unlocked();
+    s.app.on_text(R"({"type":"charm","op":"clock","time":"21:55"})", s.now);
+    s.at(s.now + 50);
+    CHECK(s.view.clock_text() == "21:55");
+    const int right = size - int(size * (round ? 0.17f : 0.035f));
+    const int top = int(size * (round ? 0.18f : 0.035f));
+    CHECK(s.screen.count_lit(right - 96, top - 2, right + 2, top + 30) > 30);
+    // The centre of the top band is the battery's, never a second clock.
+    CHECK(s.screen.count_lit(size / 2 - 30, top - 2, size / 2 + 30, top + 30) == 0);
+    s.screen.save_png(round ? "clock-466" : "clock-480");
+  }
+
+  // The desktop charm's notch has no room beside its eyes.
+  Notch n;
+  n.view.set_clock("21:55");
+  CHECK(n.view.clock_text().empty());
 }

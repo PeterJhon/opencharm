@@ -44,17 +44,22 @@ function convert(
     "--lv-include",
     "lvgl.h",
   ];
+  // Paths relative to the repo, with forward slashes on every OS: they're written into the generated
+  // file's header, and a Windows build shouldn't change it.
+  const repoPath = (path: string) => relative(ROOT, path).replaceAll("\\", "/");
   for (const font of fonts) {
-    // Paths relative to the repo: they're written into the generated file's header.
-    args.push("--font", relative(ROOT, font.file));
+    args.push("--font", repoPath(font.file));
     if (font.symbols) args.push("--symbols", font.symbols);
     if (font.range) args.push("--range", font.range);
   }
-  args.push("-o", relative(ROOT, join(OUT, `${name}.c`)));
-  execFileSync(join(ROOT, "node_modules", ".bin", "lv_font_conv"), args, {
-    cwd: ROOT,
-    stdio: "inherit",
-  });
+  args.push("-o", repoPath(join(OUT, `${name}.c`)));
+  // The script itself, not npm's shim: Node can't spawn the extensionless Unix link on Windows, and
+  // the shim would put face glyphs like ">" and "^" through cmd.exe.
+  execFileSync(
+    process.execPath,
+    [join(ROOT, "node_modules", "lv_font_conv", "lv_font_conv.js"), ...args],
+    { cwd: ROOT, stdio: "inherit" }
+  );
   console.log(`wrote firmware/core/src/ui/fonts/${name}.c`);
 }
 
@@ -72,3 +77,45 @@ const TEXT_RANGE =
   "0x20-0x7E,0xA0-0xFF,0x2013-0x2014,0x2018-0x201D,0x2022,0x2026,0x2212";
 convert("charm_text_35", 35, [{ file: MEDIUM, range: TEXT_RANGE }]);
 convert("charm_text_24", 24, [{ file: MEDIUM, range: TEXT_RANGE }]);
+
+// Chinese is a fallback font of its own: 3,778 characters at 24 px (the 35 px text falls back to the
+// same glyphs, drawn a little smaller). Geist Mono keeps Latin and punctuation (src/ui/lvgl_view.cpp).
+const CHINESE_FONT = join(HERE, "NotoSansSC-Medium-subset.ttf");
+const CHINESE = readFileSync(join(HERE, "common-chinese.txt"), "utf8").trim();
+convert("charm_cjk_24", 24, [{ file: CHINESE_FONT, symbols: CHINESE }]);
+
+// The board's full font (spec 016): GB18030's BMP CJK (Ext A, unified, compatibility) and CJK
+// punctuation, as a binary LVGL font read from flash. It is too large for the emulator/host, which
+// keep the 3,778-character C font above; the board's app partition is 11 MB.
+const FULL = join(HERE, "NotoSansSC-Medium.otf");
+const FULL_RANGES = [
+  "0x3000-0x303F", // CJK punctuation
+  "0x3400-0x4DBF", // CJK Extension A
+  "0x4E00-0x9FFF", // CJK Unified Ideographs
+  "0xF900-0xFAFF", // CJK Compatibility Ideographs
+  "0xFF00-0xFFEF", // Halfwidth and Fullwidth Forms
+];
+function convertFullBin(): void {
+  const out = join(OUT, "charm_cjk_24_full.bin");
+  const args = [
+    "--no-compress",
+    "--no-prefilter",
+    "--bpp",
+    "4",
+    "--size",
+    "24",
+    "--format",
+    "bin",
+    "--font",
+    relative(ROOT, FULL).replaceAll("\\", "/"),
+  ];
+  for (const range of FULL_RANGES) args.push("--range", range);
+  args.push("-o", relative(ROOT, out).replaceAll("\\", "/"));
+  execFileSync(
+    process.execPath,
+    [join(ROOT, "node_modules", "lv_font_conv", "lv_font_conv.js"), ...args],
+    { cwd: ROOT, stdio: "inherit" }
+  );
+  console.log("wrote firmware/core/src/ui/fonts/charm_cjk_24_full.bin");
+}
+convertFullBin();

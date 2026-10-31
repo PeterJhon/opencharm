@@ -13,8 +13,11 @@ namespace {
 constexpr size_t kMaxJsonBytes = 16 * 1024;
 constexpr size_t kMaxText = 2000;
 constexpr size_t kMaxFaceLine = 200;
-constexpr size_t kMaxAskText = 200;
+// A long approval is the agent's full tool title, scrolled on the decision screen.
+constexpr size_t kMaxAskText = 2000;
 constexpr size_t kMaxAskLabel = 12;
+constexpr size_t kMaxProgressEntries = 12;
+constexpr size_t kMaxProgressText = 200;
 // The look's limits, as packages/protocol checks them.
 constexpr size_t kMaxNameChars = 12;
 constexpr size_t kMaxNameBytes = 24;
@@ -46,6 +49,16 @@ bool all_digits(const char* s, size_t min, size_t max) {
   for (size_t i = 0; i < n; ++i)
     if (s[i] < '0' || s[i] > '9') return false;
   return true;
+}
+
+// The screen's clock: 24-hour "hh:mm", as charmd's computer writes it.
+bool is_clock(const char* s) {
+  if (!s || std::strlen(s) != 5 || s[2] != ':') return false;
+  for (int i : {0, 1, 3, 4})
+    if (s[i] < '0' || s[i] > '9') return false;
+  int hours = (s[0] - '0') * 10 + (s[1] - '0');
+  int minutes = (s[3] - '0') * 10 + (s[4] - '0');
+  return hours < 24 && minutes < 60;
 }
 
 bool is_token(const char* s) {
@@ -173,6 +186,38 @@ bool parse_look(const cJSON* root, Look& out) {
   return true;
 }
 
+bool parse_progress(const cJSON* root, ServerMessage& out) {
+  const cJSON* entries = cJSON_GetObjectItemCaseSensitive(root, "entries");
+  if (!cJSON_IsArray(entries)) return false;
+  int count = cJSON_GetArraySize(entries);
+  if (count < 0 || size_t(count) > kMaxProgressEntries) return false;
+  std::vector<ProgressEntry> parsed;
+  parsed.reserve(size_t(count));
+  for (int i = 0; i < count; ++i) {
+    const cJSON* entry = cJSON_GetArrayItem(entries, i);
+    if (!cJSON_IsObject(entry)) return false;
+    const char* text = str(entry, "text");
+    const char* status = str(entry, "status");
+    size_t length = text ? std::strlen(text) : 0;
+    if (length < 1 || length > kMaxProgressText) return false;
+    ProgressStatus state;
+    if (is(status, "pending"))
+      state = ProgressStatus::Pending;
+    else if (is(status, "in_progress"))
+      state = ProgressStatus::InProgress;
+    else if (is(status, "completed"))
+      state = ProgressStatus::Completed;
+    else if (is(status, "failed"))
+      state = ProgressStatus::Failed;
+    else
+      return false;
+    parsed.push_back({text, state});
+  }
+  out.progress = std::move(parsed);
+  out.kind = ServerKind::Progress;
+  return true;
+}
+
 bool parse_charm(const cJSON* root, ServerMessage& out) {
   const char* op = str(root, "op");
   if (is(op, "look")) {
@@ -244,6 +289,14 @@ bool parse_charm(const cJSON* root, ServerMessage& out) {
     out.id = id;
     return true;
   }
+  if (is(op, "progress")) return parse_progress(root, out);
+  if (is(op, "clock")) {
+    const char* time = str(root, "time");
+    if (!is_clock(time)) return false;
+    out.kind = ServerKind::Clock;
+    out.clock = time;
+    return true;
+  }
   if (is(op, "face")) {
     const char* state = str(root, "state");
     if (!is_face_state(state) || !optional_text(root, "text", kMaxFaceLine, out.text)) return false;
@@ -279,6 +332,7 @@ bool parse_server_message(std::string_view json, ServerMessage& out) {
     const cJSON* features = cJSON_GetObjectItemCaseSensitive(root, "features");
     out.accepts_text = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(features, "text"));
     out.accepts_battery = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(features, "battery"));
+    out.accepts_speak = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(features, "speak"));
     return is(str(root, "transport"), "websocket");
   }
   if (is(type, "stt")) {
@@ -315,6 +369,11 @@ std::string client_hello(const Build& build) {
   cJSON* features = cJSON_AddObjectToObject(hello, "features");
   cJSON_AddBoolToObject(features, "mcp", true);
   cJSON_AddBoolToObject(features, "opencharm", true);
+  cJSON_AddBoolToObject(features, "long_ask", true);
+  // The charm keeps a text reply as one scrollable report: charmd sends the reply as written.
+  cJSON_AddBoolToObject(features, "report", true);
+  // The charm's screen shows the computer's time, sent with each minute.
+  cJSON_AddBoolToObject(features, "clock", true);
   cJSON_AddStringToObject(hello, "transport", "websocket");
   cJSON* audio = cJSON_AddObjectToObject(hello, "audio_params");
   cJSON_AddStringToObject(audio, "format", "opus");
@@ -379,6 +438,14 @@ std::string client_battery(int percent, bool charging, bool usb) {
   cJSON_AddNumberToObject(m, "percent", percent < 0 ? 0 : percent > 100 ? 100 : percent);
   cJSON_AddBoolToObject(m, "charging", charging);
   cJSON_AddBoolToObject(m, "usb", usb);
+  return print_and_free(m);
+}
+
+std::string client_speak(std::string_view text) {
+  cJSON* m = cJSON_CreateObject();
+  cJSON_AddStringToObject(m, "type", "charm");
+  cJSON_AddStringToObject(m, "op", "speak");
+  cJSON_AddStringToObject(m, "text", std::string(text).c_str());
   return print_and_free(m);
 }
 

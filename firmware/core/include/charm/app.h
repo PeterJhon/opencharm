@@ -23,6 +23,7 @@ struct AppOptions {
   uint32_t seed = 1;                 // reactions vary; tests fix the order
   uint32_t battery_ms = 3000;        // the battery level shows this long on wake and a key press
   uint32_t status_ms = 10000;        // the status screen closes after this long without touch
+  uint32_t progress_ms = 60000;      // the progress page closes after this long without an update
   int battery_low = 15;              // below this percent a marker stays on the face
   uint32_t setup_hold_ms = 5000;     // the key held this long while not connected: Wi-Fi setup
   Build build;                       // what this charm runs, sent in hello (spec 015)
@@ -56,9 +57,14 @@ class App {
   // What the platform reads about itself (battery, temperatures, Wi-Fi, charmd), about once a
   // second. Drives the battery indicator and the status screen (spec 009).
   void on_status(const Status& status, uint32_t now);
-  // A finger held on the face (1 s): opens the status screen.
+  // A finger held on the face (1 s): opens the progress page while the agent is working, else the
+  // status screen.
   void on_touch_hold(uint32_t now);
+  // A progress line tapped on the progress page (spec 017): ask charmd to read it aloud.
+  void on_progress_tap(std::string_view text, uint32_t now);
   bool status_open() const { return status_open_; }
+  bool progress_open() const { return progress_open_; }
+  bool report_open() const { return report_open_; }
 
   // The platform connects with "Authorization: Bearer <token>" when this is not empty.
   std::string token() const;
@@ -93,6 +99,10 @@ class App {
   void show_battery_for_a_moment(uint32_t now) { battery_until_ = now + options_.battery_ms; }
   void update_battery(uint32_t now);
   void close_status();
+  void close_progress();
+  void clear_progress();
+  void close_report();
+  void clear_report();
   void report_battery();
 
   Hal& hal_;
@@ -104,6 +114,9 @@ class App {
   std::string session_id_;
   std::string face_ = "neutral";
   std::string line_;
+  // What the person said this turn (spec 003), shown while the agent starts and at the top of the
+  // progress page.
+  std::string heard_;
   bool key_down_ = false;
   uint32_t key_down_at_ = 0;
   bool talking_ = false;
@@ -130,20 +143,36 @@ class App {
   bool asking_ = false;
   bool can_type_ = false;     // charmd's hello said it accepts typed text
   bool can_battery_ = false;  // charmd's hello said it accepts the battery
+  bool can_speak_ = false;    // charmd's hello said it reads a tapped progress line
   std::string ask_id_;
   std::string ask_text_;
   std::string ask_yes_;
   std::string ask_no_;
   bool key_answered_ = false;  // this key hold already answered; its release does nothing
   std::string speech_line_;    // to bring the speech layout back after a question
+  // A reply read as text (Speak replies off), kept on a scrollable page after the turn (spec 003).
+  std::string report_;
+  bool report_open_ = false;
+  bool report_hidden_ = false;     // a question took the screen; bring the report back after it
+  bool report_cancelled_ = false;  // a press stopped the reply; don't show a report
+  bool tts_audio_ = false;         // this reply has audio, so it was spoken, not read
   std::string connecting_line_;
   // Battery and status (spec 009).
   Status status_;
   uint32_t battery_until_ = 0;
   Battery battery_shown_;
   BatteryShow battery_show_ = BatteryShow::Hidden;
+  // The clock at the screen's top right (hh:mm), from the computer: the minutes it showed when it
+  // arrived and when, so it keeps time on its own between charmd's messages.
+  std::string clock_text_;
+  int clock_minutes_ = -1;
+  uint32_t clock_synced_at_ = 0;
   bool status_open_ = false;
   uint32_t status_until_ = 0;
+  // The progress page (spec 017): the turn's plan and tool calls, while the agent works.
+  std::vector<ProgressEntry> progress_;
+  bool progress_open_ = false;
+  uint32_t progress_until_ = 0;
   uint32_t setup_key_at_ = 0;  // the key went down on the connecting screen (0 = it isn't down)
   Battery battery_reported_;   // what charmd last heard on this connection
   bool battery_reported_known_ = false;

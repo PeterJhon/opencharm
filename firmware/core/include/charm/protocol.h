@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // The charm side of packages/protocol: parse what charmd sends, build what the charm sends.
 // Both sides are tested against the same JSON fixtures (packages/protocol/fixtures).
@@ -22,9 +23,18 @@ enum class ServerKind {
   Locked,
   Revoked,
   Face,
+  Progress,
   Ask,
   AskEnd,
   Look,
+  Clock,
+};
+
+// What the agent is working through (spec 017): a plan line or a tool call, and where it is.
+enum class ProgressStatus { Pending, InProgress, Completed, Failed };
+struct ProgressEntry {
+  std::string text;
+  ProgressStatus status = ProgressStatus::Pending;
 };
 
 enum class LockReason { Boot, WrongPin, Remote, Blocked };
@@ -51,12 +61,15 @@ struct ServerMessage {
   std::string id;       // ask, ask_end
   std::string yes;      // ask: the hold label (default ALLOW)
   std::string no;       // ask: the press label (default NO)
+  std::string clock;    // clock: the computer's local time, "hh:mm"
   int expires_in = 0;
   int tries_left = -1;  // -1 when absent
   LockReason reason = LockReason::Boot;
   Look look;
-  bool accepts_text = false;     // hello: charmd accepts typed text (spec 013)
-  bool accepts_battery = false;  // hello: charmd accepts the charm's battery (spec 009)
+  std::vector<ProgressEntry> progress;  // progress: at most 12 lines
+  bool accepts_text = false;            // hello: charmd accepts typed text (spec 013)
+  bool accepts_battery = false;         // hello: charmd accepts the charm's battery (spec 009)
+  bool accepts_speak = false;           // hello: charmd reads a tapped progress line (spec 017)
 };
 
 // Returns false for anything that is not a valid message from charmd; never throws.
@@ -83,6 +96,8 @@ std::string client_answer(std::string_view id, bool yes);
 std::string client_text(std::string_view text);
 // The charm's battery (spec 009), once unlocked and on change.
 std::string client_battery(int percent, bool charging, bool usb);
+// One progress line to read aloud (spec 017); only to a charmd whose hello said `features.speak`.
+std::string client_speak(std::string_view text);
 
 // Where the board connects (spec 009): the charmd address typed at Wi-Fi setup, as a WebSocket URL.
 // Only the scheme, host and port count, so "charm.example.com", "https://charm.example.com" and

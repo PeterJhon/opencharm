@@ -17,8 +17,9 @@ class Headless {
   // Draw only what changed since the last frame, as a real display does; how many flushes it took.
   int redraw();
   void click(int x, int y);
-  // A finger that stays down (press) until release.
+  // A finger that stays down (press) until release; move it while down to drag.
   void press(int x, int y);
+  void move(int x, int y);
   void release();
   uint32_t pixel(int x, int y) const;  // 0xRRGGBB
   int count_lit(int x0, int y0, int x1, int y1) const;

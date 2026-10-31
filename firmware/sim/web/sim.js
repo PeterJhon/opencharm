@@ -53,6 +53,7 @@ const trace = {
   micOpens: 0, // how many times it was opened
   micLatencyMs: null, // key-down to the first mic frame the core took, last hold (includes a 60 ms frame)
   statusOpen: false, // the status screen is up (spec 009)
+  progressOpen: false, // the agent's progress page is up (spec 017)
 };
 window.__charm = trace;
 
@@ -499,6 +500,7 @@ function loop() {
   M._sim_tick(Math.floor(now));
   const drew = M._sim_frame_dirty() === 1;
   trace.statusOpen = M._sim_status_open() === 1;
+  trace.progressOpen = M._sim_progress_open() === 1;
   if (drew) blit();
   // Two frames in a row means an animation is running: keep up with it.
   const animating = drew && drewLast;

@@ -56,6 +56,9 @@ class View {
   virtual void speech_start() = 0;
   virtual void speech_line(std::string_view text) = 0;
   virtual void speech_end() = 0;
+  // A reply that was read as text (Speak replies off), kept on screen in full and scrollable after
+  // the turn; show_face brings the face back. A key press or a tap closes it.
+  virtual void show_report(std::string_view text) = 0;
   virtual void set_needs_you(bool on) = 0;
   // Life: a squash-and-bounce when the key goes down; the eyes pulse with the voice (0..1).
   virtual void squish() = 0;
@@ -64,6 +67,9 @@ class View {
   // calm motion (breathing and blinks only: no glances, squash or voice swell). The orange ring
   // never changes colour.
   virtual void set_look(uint32_t glyph, bool calm) = 0;
+  // The time at the screen's top right ("hh:mm"), from the computer; empty hides it. The notch
+  // (the desktop charm) has no room for one beside its eyes, so its view ignores it.
+  virtual void set_clock(std::string_view hm) = 0;
   // The decision layout: a question in the speech layout and a hint built from the labels
   // ("HOLD · ALLOW    PRESS · NO"). The orange ring comes from set_needs_you.
   virtual void show_decision(std::string_view text, std::string_view yes, std::string_view no) = 0;
@@ -71,6 +77,10 @@ class View {
   virtual void set_battery(const Battery& battery, BatteryShow show) = 0;
   // The status screen in place of the face; show_face brings the face back.
   virtual void show_status(const Status& status) = 0;
+  // What the agent is working through (spec 017), in place of the face; show_face brings the face
+  // back. `heard` is what the person said (empty when unknown), shown above the list. Empty entries
+  // show nothing.
+  virtual void show_progress(const std::vector<ProgressEntry>& entries, std::string_view heard) = 0;
   virtual void tick(uint32_t now_ms) = 0;
 };
 
