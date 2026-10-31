@@ -19,6 +19,7 @@ type Trace = {
   micOpens: number;
   micLatencyMs: number | null; // key-down to the first mic frame reaching the core, last hold
   statusOpen: boolean; // the status screen is up (spec 009)
+  progressOpen: boolean; // the agent's progress page is up (spec 017)
   panelOpen?: boolean; // the desktop charm's panel under the notch
   micFrames: number;
   audioFrames: number;
@@ -30,6 +31,7 @@ type Trace = {
     text?: string;
     code?: string;
     id?: string;
+    entries?: Array<{ text: string; status: string }>;
   }>;
 };
 type Emulator = {
@@ -96,13 +98,14 @@ async function startEmulator(
       statePath: join(dir, "state.json"),
       voice: { provider: "fake", transcript },
       agent: { adapter: "acp", command: [process.execPath, FAKE_ACP_AGENT] },
+      // The emulator tests drive a turn end to end; spec 019's confirmation has its own test.
+      confirmHeard: false,
     }),
     { quiet: true }
   );
   const server: Server = createSimServer(SIM, daemon.url);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const browser: Browser = await chromium.launch({
-    channel: "chrome",
+  const launch = {
     headless: true,
     args: [
       "--use-fake-ui-for-media-stream",
@@ -110,7 +113,15 @@ async function startEmulator(
       `--use-file-for-fake-audio-capture=${wav}`,
       "--autoplay-policy=no-user-gesture-required",
     ],
-  });
+  };
+  // Chrome when it's installed, Playwright's Chromium otherwise (a Windows machine without it,
+  // or CI): the emulator is the same page in both.
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({ ...launch, channel: "chrome" });
+  } catch {
+    browser = await chromium.launch(launch);
+  }
   const page = await browser.newPage({
     viewport: { width: 1100, height: 800 },
   });

@@ -184,6 +184,46 @@ async function dev(
   fail(ctx, DEV_USAGE);
 }
 
+const SHOW_USAGE =
+  "Usage: opencharm show [--charm <name>] [--stdin] <text>   (shown on the charm as one scrollable report; --stdin reads it from a pipe)";
+
+// Text from the computer (spec 018): the charm shows it on its report page, without a turn or the
+// agent. The daemon validates the size again; this is for a clear message at the terminal.
+async function show(
+  ctx: CliContext,
+  args: readonly string[],
+  deps: AdminDeps
+): Promise<void> {
+  const charm = flagValue(args, "--charm");
+  let text: string;
+  if (args.includes("--stdin")) {
+    let input = "";
+    for await (const chunk of process.stdin) input += chunk;
+    text = input.trim();
+  } else {
+    text = positionals(args).join(" ");
+  }
+  if (!text) {
+    fail(ctx, SHOW_USAGE);
+    return;
+  }
+  if (Buffer.byteLength(text, "utf8") > 12_000) {
+    fail(
+      ctx,
+      "The text is over 12,000 bytes. Send less; the charm keeps a report up to 32 KB anyway."
+    );
+    return;
+  }
+  const { connected } = (await deps.send(deps.socket, {
+    cmd: "show",
+    ...(charm ? { charm } : {}),
+    text,
+  })) as { connected: number };
+  ctx.out.write(
+    `Shown on ${connected === 1 ? "the charm" : `${connected} charms`}.\n`
+  );
+}
+
 async function look(
   ctx: CliContext,
   args: readonly string[],
@@ -315,12 +355,16 @@ async function runAdminCommand(
       await dev(ctx, args, deps);
       return;
     }
+    if (command === "show") {
+      await show(ctx, args, deps);
+      return;
+    }
     if (command === "look") {
       await look(ctx, args, deps);
       return;
     }
     if (command === "replies") {
-      // The desktop charm speaks its replies, or shows them as text (spec 003); a board always speaks.
+      // Replies are spoken, or shown as text on every charm including a board (spec 003).
       const choice = firstPositional(args);
       if (choice !== "on" && choice !== "off") {
         fail(
@@ -333,7 +377,7 @@ async function runAdminCommand(
       ctx.out.write(
         choice === "on"
           ? "Replies are spoken, from the next one.\n"
-          : "Replies show as text on the desktop charm, from the next one (a charm on a board still speaks).\n"
+          : "Replies show as text on every charm, from the next one.\n"
       );
       return;
     }

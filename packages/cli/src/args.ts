@@ -18,6 +18,7 @@ const VALUE_FLAGS = new Set([
   "--greeting",
   "--motion",
   "--volume",
+  "--charm",
 ]);
 
 function isPositional(args: readonly string[], index: number): boolean {

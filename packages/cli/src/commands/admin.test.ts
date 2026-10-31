@@ -347,6 +347,60 @@ describe("opencharm dev", () => {
   });
 });
 
+describe("opencharm show", () => {
+  it("sends the words as one update to the newest unlocked charm", async () => {
+    const { ctx, out } = context();
+    const send = vi.fn().mockResolvedValue({ connected: 1 });
+    await runAdminCommand(ctx, "show", ["## Status", "all", "green"], {
+      socket: SOCKET,
+      send,
+      prompt: vi.fn(),
+    });
+    expect(send).toHaveBeenCalledWith(SOCKET, {
+      cmd: "show",
+      text: "## Status all green",
+    });
+    expect(out()).toContain("Shown on the charm");
+  });
+
+  it("names the charm with --charm, and doesn't send its name as text", async () => {
+    const { ctx } = context();
+    const send = vi.fn().mockResolvedValue({ connected: 1 });
+    await runAdminCommand(ctx, "show", ["All green.", "--charm", "peter"], {
+      socket: SOCKET,
+      send,
+      prompt: vi.fn(),
+    });
+    expect(send).toHaveBeenCalledWith(SOCKET, {
+      cmd: "show",
+      charm: "peter",
+      text: "All green.",
+    });
+  });
+
+  it("refuses text over the admin socket's budget", async () => {
+    const { ctx, err } = context();
+    const send = vi.fn();
+    await runAdminCommand(ctx, "show", ["x".repeat(12_001)], {
+      socket: SOCKET,
+      send,
+      prompt: vi.fn(),
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(err()).toContain("12,000 bytes");
+  });
+
+  it("explains its usage when there is no text", async () => {
+    const { ctx, err } = context();
+    await runAdminCommand(ctx, "show", [], {
+      socket: SOCKET,
+      send: vi.fn(),
+      prompt: vi.fn(),
+    });
+    expect(err()).toContain("opencharm show");
+  });
+});
+
 describe("opencharm look", () => {
   const LOOK = {
     name: "Momo",
@@ -432,7 +486,7 @@ describe("opencharm look", () => {
     expect(err()).toContain("the colour is one of");
   });
 
-  it("turns spoken replies off and on for the desktop charm", async () => {
+  it("turns spoken replies off and on for every charm", async () => {
     const { ctx, out } = context();
     const send = vi.fn().mockResolvedValue({ speak: false });
     await runAdminCommand(ctx, "replies", ["off"], {

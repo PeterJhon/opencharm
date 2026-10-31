@@ -26,7 +26,9 @@ function runHelp(ctx: CliContext): void {
     opencharm revoke <charm>        forget a charm (it must pair again)
     opencharm new [charm]           a new conversation with your agent (every charm when none is named)
     opencharm replies on|off        the desktop charm speaks its replies, or shows them as text
+    opencharm show [text]           show text from this computer on the charm (a scrollable report)   [--charm <name>] [--stdin]
     opencharm look                  show or change the charm's look until charmd restarts   [--colour <c|#RRGGBB>] [--greeting <text>] [--motion full|calm] [--volume <0-100>]
+    opencharm hook                  mirror Claude Code hook events to the charm (reads JSON on stdin)   [--config <file>] [--charm <name>]
     opencharm dev face <charm> <state|feeling> [text]   show a face (testing)
     opencharm dev say <charm> <text>                    speak through it (testing)
     opencharm dev ask <charm> <question>                ask it; hold = yes, press = no (testing)

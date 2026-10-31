@@ -15,6 +15,7 @@ import { runHardware } from "./commands/hardware";
 import { runHello } from "./commands/hello";
 import { runHelp } from "./commands/help";
 import { runInit } from "./commands/init";
+import { runHook } from "./commands/hook";
 import { serveMcp } from "./commands/mcp";
 import { runServe } from "./commands/serve";
 import { runVoice } from "./commands/voice";
@@ -94,12 +95,26 @@ async function main(argv: readonly string[]): Promise<void> {
       });
       return;
     }
+    case "hook": {
+      // A Claude Code hook event on stdin: mirrored to the charm, never failing the agent's turn.
+      try {
+        await runHook(rest, {
+          socket: loadConfig(flagValue(rest, "--config")).adminSocket,
+          send: sendAdmin,
+          prompt: promptHidden,
+        });
+      } catch {
+        // No charmd, no config, a bad event: the hook still succeeds and says nothing.
+      }
+      return;
+    }
     case "pair":
     case "lock":
     case "unlock":
     case "revoke":
     case "status":
     case "dev":
+    case "show":
     case "look":
     case "replies":
     case "new":
