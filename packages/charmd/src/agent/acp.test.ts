@@ -11,7 +11,7 @@ import {
   createAcpAgent,
   describeAction,
 } from "./acp";
-import type { AgentAdapter } from "./types";
+import type { AgentAdapter, ProgressUpdate } from "./types";
 
 type Logged = { pid: number; method: string; params: Record<string, unknown> };
 
@@ -241,6 +241,36 @@ describe("acp agent", () => {
     );
   });
 
+  it("reports the plan and tool calls, with a short title and their statuses", async () => {
+    const { agent } = setup();
+    const updates: ProgressUpdate[] = [];
+    let out = "";
+    for await (const chunk of agent.reply({
+      sessionKey: "opencharm-c_1",
+      text: "progress",
+      signal: new AbortController().signal,
+      onProgress: (update) => updates.push(update),
+    }))
+      out += chunk;
+    expect(out).toBe("All done.");
+    expect(updates).toEqual([
+      {
+        kind: "plan",
+        entries: [
+          { text: "Read the spec", status: "completed" },
+          { text: "Run npm test", status: "in_progress" },
+        ],
+      },
+      {
+        kind: "tool",
+        id: "t9",
+        text: "run npm test",
+        status: "in_progress",
+      },
+      { kind: "tool", id: "t9", status: "completed" },
+    ]);
+  });
+
   it(
     "cancels the turn when the user presses the key, and stays usable",
     async () => {
@@ -433,7 +463,8 @@ describe("describeAction", () => {
     expect(
       describeAction(`Read ${homedir()}/.ssh/id_ed25519`, "/w/me/charm")
     ).toBe("read ~/.ssh/id_ed25519");
-    expect(describeAction("x".repeat(300), "/w").length).toBe(120);
+    // The whole title is kept; the session fits it to the charm's question limit.
+    expect(describeAction("x".repeat(300), "/w").length).toBe(300);
     expect(describeAction("mcp__gmail__send_email", "/w")).toBe(
       "use the gmail tool send_email"
     );

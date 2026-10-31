@@ -40,6 +40,7 @@ const DEFAULT_VOICES: Record<string, string> = {
   fr: "fr-FR-DeniseNeural",
   de: "de-DE-KatjaNeural",
   pt: "pt-BR-FranciscaNeural",
+  zh: "zh-CN-XiaoxiaoNeural",
 };
 const WINDOWS_EPOCH_SECONDS = 11644473600;
 

@@ -7,11 +7,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readOggOpus } from "../audio/ogg-opus";
 import { oggOpusToPcm, pcmToOggOpus } from "../audio/opus-codec";
 import { VoiceNotReady, defaultModelsDir, modelPath } from "./models";
-import { createParakeetListener, createSupertonicSpeaker } from "./sherpa";
+import {
+  createLocalListener,
+  createLocalSpeaker,
+  createParakeetListener,
+  createSupertonicSpeaker,
+} from "./sherpa";
 
 const installed =
   existsSync(join(modelPath("parakeet"), "tokens.txt")) &&
   existsSync(join(modelPath("supertonic"), "tts.json"));
+const chineseInstalled =
+  existsSync(join(modelPath("sensevoice"), "tokens.txt")) &&
+  existsSync(join(modelPath("chinese"), "model.int8.onnx"));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -62,6 +70,25 @@ describe("the local voice", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Runs where the Chinese models are installed (spec 016).
+  it.skipIf(!chineseInstalled)(
+    "speaks Chinese with Kokoro and hears it back with SenseVoice",
+    async () => {
+      const signal = new AbortController().signal;
+      const ogg = await createLocalSpeaker({
+        modelsDir: defaultModelsDir(),
+        language: "zh",
+      }).synthesize("今天天气不错，我们出去走走吧。", signal, "zh");
+      expect(readOggOpus(ogg).packets.length).toBeGreaterThan(20);
+      const heard = await createLocalListener({
+        modelsDir: defaultModelsDir(),
+        language: "zh",
+      }).transcribe(pcmToOggOpus(oggOpusToPcm(ogg, 16000), 16000));
+      expect(heard).toContain("天气");
+    },
+    60_000
+  );
 
   // Runs where the models are installed (`opencharm voice install`), e.g. the maintainer's Mac.
   it.skipIf(!installed)(

@@ -20,6 +20,7 @@ const COMMANDS = [
   "devFace",
   "devSay",
   "devAsk",
+  "show",
   "look",
   "replies",
   "newConversation",

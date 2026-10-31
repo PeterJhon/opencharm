@@ -30,6 +30,8 @@ async function start(
     parseConfig({
       listen: { port: 0 },
       statePath: join(dir, "state.json"),
+      // Most tests are about the turn itself; spec 019's confirmation has its own test.
+      confirmHeard: false,
       ...extra,
     }),
     { timings, quiet: true, ...options }
@@ -385,7 +387,11 @@ describe("turn log", () => {
     const dir = mkdtempSync(join(tmpdir(), "oc-daemon-"));
     const entries: Array<Record<string, unknown>> = [];
     daemon = await startDaemon(
-      parseConfig({ listen: { port: 0 }, statePath: join(dir, "state.json") }),
+      parseConfig({
+        listen: { port: 0 },
+        statePath: join(dir, "state.json"),
+        confirmHeard: false,
+      }),
       {
         quiet: true,
         log: (entry) => entries.push(entry),
@@ -535,6 +541,100 @@ describe("dev commands", () => {
   });
 });
 
+describe("confirming what it heard over a real socket (spec 019)", () => {
+  it("asks send or redo, and a redo never reaches the agent", async () => {
+    const { daemon: d } = await start(undefined, { confirmHeard: true });
+    const { charm } = await pair(d);
+    await charm.next(isOp("locked"));
+    charm.send({ type: "charm", op: "unlock", pin: "482913" });
+    await charm.next(isOp("unlocked"));
+
+    charm.send({ type: "listen", state: "start", mode: "manual" });
+    for (let i = 0; i < 5; i++) charm.ws.send(Buffer.from([0xf8, 1, 2, 3]));
+    charm.send({ type: "listen", state: "stop" });
+    const question = await charm.next(isOp("ask"));
+    if (question.type !== "charm" || question.op !== "ask")
+      throw new Error("no ask");
+    expect(question).toMatchObject({
+      text: "hello",
+      yes: "SEND",
+      no: "REDO",
+    });
+    charm.send({
+      type: "charm",
+      op: "answer",
+      id: question.id,
+      yes: false,
+    });
+    await charm.next(
+      (m) => m.type === "charm" && m.op === "face" && m.state === "idle"
+    );
+    expect(charm.received.some((m) => m.type === "tts")).toBe(false);
+
+    charm.send({ type: "listen", state: "start", mode: "manual" });
+    for (let i = 0; i < 5; i++) charm.ws.send(Buffer.from([0xf8, 1, 2, 3]));
+    charm.send({ type: "listen", state: "stop" });
+    const again = await charm.next(isOp("ask"));
+    if (again.type !== "charm" || again.op !== "ask") throw new Error("no ask");
+    charm.send({ type: "charm", op: "answer", id: again.id, yes: true });
+    expect(
+      await charm.next((m) => m.type === "tts" && m.state === "stop", 10_000)
+    ).toBeTruthy();
+  }, 30_000);
+});
+
+describe("text from the computer over a real socket (spec 018)", () => {
+  async function unlockedReportCharm(d: Daemon, features = true) {
+    const charm = await connectFakeCharm(d.url, undefined, {
+      features: features ? { report: true } : {},
+    });
+    const code = await charm.next(isOp("pair_code"));
+    if (code.type !== "charm" || code.op !== "pair_code")
+      throw new Error("no code");
+    await d.admin.pair({ code: code.code, pin: "482913", name: "pip" });
+    await charm.next(isOp("locked"));
+    charm.send({ type: "charm", op: "unlock", pin: "482913" });
+    await charm.next(isOp("unlocked"));
+    return charm;
+  }
+
+  it("shows an update as the charm's report page, with no turn and no audio", async () => {
+    const { daemon: d } = await start();
+    const charm = await unlockedReportCharm(d);
+    expect(await d.admin.show({ text: "## Status\n\n- built" })).toEqual({
+      connected: 1,
+    });
+    expect(
+      await charm.next((m) => m.type === "tts" && m.state === "sentence_start")
+    ).toMatchObject({ text: "## Status" });
+    expect(
+      await charm.next((m) => m.type === "tts" && m.state === "sentence_start")
+    ).toMatchObject({ text: "" });
+    expect(
+      await charm.next((m) => m.type === "tts" && m.state === "sentence_start")
+    ).toMatchObject({ text: "- built" });
+    expect(
+      await charm.next((m) => m.type === "tts" && m.state === "stop")
+    ).toBeTruthy();
+    expect(charm.audioFrames()).toBe(0);
+  });
+
+  it("refuses a charm whose firmware doesn't show reports", async () => {
+    const { daemon: d } = await start();
+    const charm = await unlockedReportCharm(d, false);
+    await expect(d.admin.show({ text: "hi" })).rejects.toThrow(/report/);
+    expect(charm.received.some((m) => m.type === "tts")).toBe(false);
+  });
+
+  it("refuses text over the admin socket's budget", async () => {
+    const { daemon: d } = await start();
+    await unlockedReportCharm(d);
+    await expect(d.admin.show({ text: "x".repeat(12_001) })).rejects.toThrow(
+      /12,000/
+    );
+  });
+});
+
 describe("replies as text over a real socket (spec 003)", () => {
   async function turnOf(d: Daemon, kind: string) {
     const charm = await connectFakeCharm(d.url, undefined, {
@@ -554,18 +654,20 @@ describe("replies as text over a real socket (spec 003)", () => {
     return charm.audioFrames();
   }
 
-  it("the desktop charm shows replies as text when they're off; a charm on a board still speaks", async () => {
+  it("every charm shows replies as text when they're off, a board included", async () => {
     const { daemon: d } = await start(undefined, { speakReplies: false });
     expect(await turnOf(d, "desktop")).toBe(0);
-    expect(await turnOf(d, "emulator")).toBeGreaterThan(0);
-  });
+    expect(await turnOf(d, "emulator")).toBe(0);
+    expect(await turnOf(d, "board")).toBe(0);
+  }, 30_000);
 
   it("the admin command turns speaking back on from the next turn", async () => {
     const { daemon: d } = await start(undefined, { speakReplies: false });
     expect(await d.admin.replies({ speak: true })).toEqual({ speak: true });
     expect(await turnOf(d, "desktop")).toBeGreaterThan(0);
+    expect(await turnOf(d, "board")).toBeGreaterThan(0);
     await expect(d.admin.replies({ speak: "yes" })).rejects.toThrow();
-  });
+  }, 30_000);
 });
 
 describe("typed text over a real socket (spec 013)", () => {

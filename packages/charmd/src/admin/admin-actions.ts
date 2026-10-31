@@ -1,4 +1,5 @@
 import { FACE_FEELINGS, FACE_STATES } from "@opencharm-labs/protocol/constants";
+import { utf8Length } from "@opencharm-labs/protocol/text";
 import { z } from "zod";
 
 import type { PairingRegistry } from "../auth/pairing";
@@ -40,6 +41,8 @@ type AdminActions = {
   devFace: (input: unknown) => Promise<{ connected: number }>;
   devSay: (input: unknown) => Promise<{ connected: number }>;
   devAsk: (input: unknown) => Promise<{ answer: "yes" | "no" }>;
+  // Text from the computer (spec 018): the charm's report page, no agent turn involved.
+  show: (input: unknown) => Promise<{ connected: number }>;
   look: (input: unknown) => Promise<Look & { connected: number }>;
   replies: (input: unknown) => Promise<{ speak: boolean }>;
   // A new conversation with the agent (spec 003): the named charm, every paired charm when none is
@@ -113,6 +116,16 @@ const devFaceInput = anyCharmInput
     error: "a feeling goes over the idle state only",
   });
 const devSayInput = anyCharmInput.extend({ text: z.string().min(1).max(500) });
+// Text from the computer (spec 018), shown as the charm's report page. The admin socket takes a
+// 16 KB request; 12,000 UTF-8 bytes of text stays under it with the JSON around it.
+const showInput = anyCharmInput.extend({
+  text: z
+    .string()
+    .min(1)
+    .refine((text) => utf8Length(text) <= 12_000, {
+      message: "the text is over 12,000 bytes",
+    }),
+});
 // Strict, so a request can't slip in agentCanChangeLook or anything else that isn't the look.
 const lookInput = z
   .object({ ...lookFields, source: z.literal("agent").optional() })
@@ -248,6 +261,16 @@ function createAdminActions({
         const { charm: ref, text } = parseInput(devSayInput, input);
         const live = requireLive(ref);
         for (const session of live) session.devSay(text);
+        return { connected: live.length };
+      });
+    },
+    // Text from the computer (spec 018): shown on the charm's report page, the same page a text
+    // reply uses. No agent turn is started and nothing is spoken.
+    show(input) {
+      return settled(() => {
+        const { charm: ref, text } = parseInput(showInput, input);
+        const live = requireLive(ref);
+        for (const session of live) session.showReport(text);
         return { connected: live.length };
       });
     },

@@ -45,6 +45,48 @@ async function prompt(params, cx) {
     );
     return { stopReason: "cancelled" };
   }
+  if (text.includes("progress")) {
+    await cx.notify(acp.methods.client.session.update, {
+      sessionId,
+      update: {
+        sessionUpdate: "plan",
+        entries: [
+          { content: "Read the spec", priority: "high", status: "completed" },
+          {
+            content: "Run npm test",
+            priority: "high",
+            status: "in_progress",
+          },
+        ],
+      },
+    });
+    await cx.notify(acp.methods.client.session.update, {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "t9",
+        title: "Run npm test",
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+    await cx.notify(acp.methods.client.session.update, {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t9",
+        status: "completed",
+      },
+    });
+    if (text.includes("wait")) {
+      await new Promise((resolve) =>
+        turn.signal.addEventListener("abort", resolve)
+      );
+      return { stopReason: "cancelled" };
+    }
+    await say(cx, sessionId, "All done.");
+    return { stopReason: "end_turn" };
+  }
   if (text.includes("tool")) {
     await say(cx, sessionId, "Let me check.");
     await cx.notify(acp.methods.client.session.update, {

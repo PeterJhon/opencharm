@@ -20,6 +20,8 @@ function setup(
       text: string,
       options?: { signal?: AbortSignal }
     ) => Promise<boolean>;
+    speakAloud?: () => boolean;
+    confirmHeard?: () => boolean;
   } = {}
 ) {
   const out: Out[] = [];
@@ -38,6 +40,8 @@ function setup(
     log: (entry) => logs.push(entry),
     sleep: () => Promise.resolve(),
     ...(options.ask ? { ask: options.ask } : {}),
+    ...(options.speakAloud ? { speakAloud: options.speakAloud } : {}),
+    ...(options.confirmHeard ? { confirmHeard: options.confirmHeard } : {}),
   });
   const faces = () =>
     out.flatMap((m) => ("op" in m && m.op === "face" ? [m.state] : []));
@@ -711,6 +715,103 @@ describe("replies as text (spec 003)", () => {
     expect(pauses).toEqual([2000, (11 / 3) * 1000]);
   });
 
+  it("sends the reply as written to a charm that keeps a report, with no reading time", async () => {
+    const out: Out[] = [];
+    let synthesized = 0;
+    const fake = createFakeVoice({ transcript: "status" });
+    const turn = new TurnController({
+      voice: {
+        ...fake,
+        synthesize: (text, signal) => {
+          synthesized += 1;
+          return fake.synthesize(text, signal);
+        },
+      },
+      agent: createFakeAgent({
+        reply: () =>
+          "## Status\n\n- first point\n- second point\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+      }),
+      sessionKey: "opencharm-c_1",
+      send: (m) => out.push(m),
+      sendAudio: () => undefined,
+      timeoutMs: 5000,
+      speakAloud: () => false,
+      report: () => true,
+    });
+    await speak(turn);
+    expect(synthesized).toBe(0);
+    expect(out.some((m) => "audio" in m)).toBe(false);
+    const tts = out.filter(
+      (m) => !("audio" in m) && m.type === "tts"
+    ) as Array<{ state: string; text?: string }>;
+    expect(tts[0]).toMatchObject({ state: "start" });
+    expect(tts.at(-1)).toMatchObject({ state: "stop" });
+    expect(
+      tts.filter((m) => m.state === "sentence_start").map((m) => m.text)
+    ).toEqual([
+      "## Status",
+      "",
+      "- first point",
+      "- second point",
+      "",
+      "| A | B |",
+      "|---|---|",
+      "| 1 | 2 |",
+    ]);
+    expect(out).toContainEqual(expect.objectContaining({ type: "stt" }));
+    expect(out).toContainEqual(
+      expect.objectContaining({ type: "charm", op: "face", state: "idle" })
+    );
+  });
+
+  it("splits a report line longer than the charm's message limit, keeping every character", async () => {
+    const long = "x".repeat(2500);
+    const out: Out[] = [];
+    const turn = new TurnController({
+      voice: createFakeVoice({ transcript: "long" }),
+      agent: createFakeAgent({ reply: () => long }),
+      sessionKey: "opencharm-c_1",
+      send: (m) => out.push(m),
+      sendAudio: () => undefined,
+      timeoutMs: 5000,
+      speakAloud: () => false,
+      report: () => true,
+    });
+    await speak(turn);
+    const lines = (
+      out.filter((m) => !("audio" in m) && m.type === "tts") as Array<{
+        state: string;
+        text?: string;
+      }>
+    )
+      .filter((m) => m.state === "sentence_start")
+      .map((m) => m.text ?? "");
+    expect(lines.join("")).toBe(long);
+    expect(lines.every((line) => Buffer.byteLength(line) <= 2000)).toBe(true);
+  });
+
+  it("keeps a Chinese sentence long enough to read, not the two-second minimum", async () => {
+    const pauses: number[] = [];
+    const turn = new TurnController({
+      voice: createFakeVoice({ transcript: "你好" }),
+      agent: createFakeAgent({
+        reply: () => "这是一段比较长的中文回答需要足够时间阅读",
+      }),
+      sessionKey: "opencharm-c_1",
+      send: () => undefined,
+      sendAudio: () => undefined,
+      timeoutMs: 5000,
+      sleep: (ms) => {
+        pauses.push(ms);
+        return Promise.resolve();
+      },
+      speakAloud: () => false,
+    });
+    await speak(turn);
+    // 20 Han characters at four a second.
+    expect(pauses).toContain(5000);
+  });
+
   it("a press dismisses a reply being read", async () => {
     const reading = new TurnController({
       voice: createFakeVoice({ transcript: "hi" }),
@@ -1095,5 +1196,284 @@ describe("hearing you while you hold the key (spec 003)", () => {
     turn.audio(Buffer.from([0xf8, 1, 2, 3]));
     turn.abort();
     expect(seen.cancelled).toBe(1);
+  });
+});
+
+describe("progress on the charm (spec 017)", () => {
+  it("sends the plan, then tool calls, updating a tool rather than duplicating it", async () => {
+    const agent: AgentAdapter = {
+      name: "planning",
+      async *reply({ onProgress }) {
+        await Promise.resolve();
+        const plan = [
+          { text: "Read the spec", status: "completed" as const },
+          { text: "Run npm test", status: "in_progress" as const },
+          { text: "Fix the test", status: "pending" as const },
+        ];
+        onProgress?.({ kind: "plan", entries: plan });
+        onProgress?.({ kind: "plan", entries: plan }); // unchanged: not sent twice
+        onProgress?.({
+          kind: "tool",
+          id: "t1",
+          text: "run npm test",
+          status: "in_progress",
+        });
+        onProgress?.({ kind: "tool", id: "t1", status: "completed" });
+        onProgress?.({
+          kind: "tool",
+          id: "t2",
+          text: "read src/app.ts",
+          status: "completed",
+        });
+        yield "Done.";
+      },
+    };
+    const { turn, out } = setup({ agent });
+    await speak(turn);
+    const progress = out.flatMap((m) =>
+      "op" in m && m.op === "progress" ? [m.entries] : []
+    );
+    expect(progress).toEqual([
+      [
+        { text: "Read the spec", status: "completed" },
+        { text: "Run npm test", status: "in_progress" },
+        { text: "Fix the test", status: "pending" },
+      ],
+      [
+        { text: "Read the spec", status: "completed" },
+        { text: "Run npm test", status: "in_progress" },
+        { text: "Fix the test", status: "pending" },
+        { text: "run npm test", status: "in_progress" },
+      ],
+      [
+        { text: "Read the spec", status: "completed" },
+        { text: "Run npm test", status: "in_progress" },
+        { text: "Fix the test", status: "pending" },
+        { text: "run npm test", status: "completed" },
+      ],
+      [
+        { text: "Read the spec", status: "completed" },
+        { text: "Run npm test", status: "in_progress" },
+        { text: "Fix the test", status: "pending" },
+        { text: "run npm test", status: "completed" },
+        { text: "read src/app.ts", status: "completed" },
+      ],
+      [], // the turn is over: the charm puts the face back
+    ]);
+    const lines = out.flatMap((m) =>
+      "op" in m && m.op === "face" && m.text ? [m.text] : []
+    );
+    expect(lines).toContain("Run npm test"); // the active plan line
+    expect(lines).toContain("run npm test"); // the tool
+  });
+
+  it("keeps the newest twelve entries, so a long turn doesn't overflow the charm", async () => {
+    const agent: AgentAdapter = {
+      name: "busy",
+      async *reply({ onProgress }) {
+        await Promise.resolve();
+        for (let i = 0; i < 15; i++)
+          onProgress?.({
+            kind: "tool",
+            id: `t${i}`,
+            text: `step ${i}`,
+            status: "completed",
+          });
+        yield "Done.";
+      },
+    };
+    const { turn, out } = setup({ agent });
+    await speak(turn);
+    const last = out
+      .flatMap((m) => ("op" in m && m.op === "progress" ? [m.entries] : []))
+      .at(-2); // -1 is the empty list that ends the turn
+    expect(last).toHaveLength(12);
+    expect(last?.[0]).toEqual({ text: "step 3", status: "completed" });
+    expect(last?.[11]).toEqual({ text: "step 14", status: "completed" });
+  });
+
+  // A voice whose first synthesis waits until the test releases it: enough to keep a line being
+  // read while the agent is still working.
+  function heldVoice() {
+    const base = createFakeVoice({ transcript: "what's on today" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let calls = 0;
+    const voice: VoiceProvider = {
+      ...base,
+      synthesize: async (text, signal, language) => {
+        if (++calls === 1) await gate;
+        return base.synthesize(text, signal, language);
+      },
+    };
+    return { voice, release };
+  }
+
+  it("keeps a tapped line visual when replies show as text", () => {
+    const { turn, out } = setup({ speakAloud: () => false });
+    expect(turn.read("Run npm test")).toBe(false);
+    expect(out.some((m) => "type" in m && m.type === "tts")).toBe(false);
+  });
+
+  it("reads a tapped line while the agent works, and the reply waits for it", async () => {
+    let releaseAgent!: () => void;
+    const held = new Promise<void>((resolve) => (releaseAgent = resolve));
+    const agent: AgentAdapter = {
+      name: "worker",
+      async *reply({ onProgress }) {
+        onProgress?.({
+          kind: "tool",
+          id: "t1",
+          text: "Run npm test",
+          status: "in_progress",
+        });
+        await held;
+        yield "All done.";
+      },
+    };
+    const { voice, release } = heldVoice();
+    const { turn, out } = setup({ agent, voice });
+    turn.listenStart();
+    turn.audio(Buffer.from([0xf8, 1, 2, 3]));
+    const done = turn.listenStop();
+    await expect
+      .poll(() => out.some((m) => "op" in m && m.op === "progress"))
+      .toBe(true);
+
+    expect(turn.read("Run npm test")).toBe(true);
+    expect(out).toContainEqual({ type: "tts", state: "start" });
+    expect(out).toContainEqual({
+      type: "tts",
+      state: "sentence_start",
+      text: "Run npm test",
+    });
+
+    release();
+    releaseAgent();
+    await done;
+    const sentences = out.flatMap((m) =>
+      "type" in m && m.type === "tts" && m.state === "sentence_start"
+        ? [m.text]
+        : []
+    );
+    expect(sentences).toEqual(["Run npm test", "All done."]);
+  });
+
+  it("a press stops the reading but leaves the agent working", async () => {
+    let releaseAgent!: () => void;
+    const held = new Promise<void>((resolve) => (releaseAgent = resolve));
+    const agent: AgentAdapter = {
+      name: "worker",
+      async *reply({ onProgress }) {
+        onProgress?.({
+          kind: "tool",
+          id: "t1",
+          text: "Run npm test",
+          status: "in_progress",
+        });
+        await held;
+        yield "All done.";
+      },
+    };
+    // The reading's first synthesis never returns (a speaker that ignores the abort): the reply
+    // must not wait for it after the press.
+    const { voice } = heldVoice();
+    const { turn, out } = setup({ agent, voice });
+    turn.listenStart();
+    turn.audio(Buffer.from([0xf8, 1, 2, 3]));
+    const done = turn.listenStop();
+    await expect
+      .poll(() => out.some((m) => "op" in m && m.op === "progress"))
+      .toBe(true);
+    expect(turn.read("Run npm test")).toBe(true);
+    turn.abort();
+    expect(turn.state).toBe("thinking"); // the agent turn is still running
+    releaseAgent();
+    await done;
+    expect(turn.state).toBe("idle");
+    expect(out).toContainEqual({
+      type: "tts",
+      state: "sentence_start",
+      text: "All done.",
+    });
+  });
+});
+
+describe("confirming what it heard (spec 019)", () => {
+  it("asks with the transcript; a redo never reaches the agent", async () => {
+    const asks: Array<{
+      text: string;
+      options?: { yes?: string; no?: string };
+    }> = [];
+    let replies = 0;
+    const { turn, out, logs } = setup({
+      agent: createFakeAgent({
+        reply: () => {
+          replies += 1;
+          return "Done.";
+        },
+      }),
+      confirmHeard: () => true,
+      ask: (text, options) => {
+        asks.push({ text, options: options as { yes?: string; no?: string } });
+        return Promise.resolve(false);
+      },
+    });
+    await speak(turn);
+    expect(asks).toHaveLength(1);
+    expect(asks[0]?.text).toBe("what's on today");
+    expect(asks[0]?.options).toMatchObject({ yes: "SEND", no: "REDO" });
+    expect(replies).toBe(0);
+    expect(out.some((m) => "type" in m && m.type === "tts")).toBe(false);
+    expect(out).toContainEqual(
+      expect.objectContaining({ type: "charm", op: "face", state: "idle" })
+    );
+    expect(logs.at(-1)).toMatchObject({
+      event: "turn",
+      outcome: "not-confirmed",
+    });
+  });
+
+  it("goes on to the agent after a send", async () => {
+    let asked = 0;
+    const { turn, out } = setup({
+      confirmHeard: () => true,
+      ask: () => {
+        asked += 1;
+        return Promise.resolve(true);
+      },
+    });
+    await speak(turn);
+    expect(asked).toBe(1);
+    expect(out.some((m) => "type" in m && m.type === "stt")).toBe(true);
+    expect(
+      out.some((m) => "type" in m && m.type === "tts" && m.state === "stop")
+    ).toBe(true);
+  });
+
+  it("doesn't ask for typed text", async () => {
+    let asked = 0;
+    const { turn } = setup({
+      confirmHeard: () => true,
+      ask: () => {
+        asked += 1;
+        return Promise.resolve(true);
+      },
+    });
+    await turn.typed("hello?");
+    expect(asked).toBe(0);
+  });
+
+  it("doesn't ask when the setting is off", async () => {
+    let asked = 0;
+    const { turn } = setup({
+      confirmHeard: () => false,
+      ask: () => {
+        asked += 1;
+        return Promise.resolve(true);
+      },
+    });
+    await speak(turn);
+    expect(asked).toBe(0);
   });
 });

@@ -35,7 +35,10 @@ const HELLO = {
 async function connectFakeCharm(
   url: string,
   token?: string,
-  options: { build?: { kind: string; version: string; commit: string } } = {}
+  options: {
+    build?: { kind: string; version: string; commit: string };
+    features?: Record<string, boolean>;
+  } = {}
 ): Promise<FakeCharm> {
   const ws = new WebSocket(url, {
     headers: {
@@ -106,7 +109,13 @@ async function connectFakeCharm(
       });
     },
   };
-  charm.send(options.build ? { ...HELLO, build: options.build } : HELLO);
+  charm.send({
+    ...HELLO,
+    ...(options.build ? { build: options.build } : {}),
+    ...(options.features
+      ? { features: { ...HELLO.features, ...options.features } }
+      : {}),
+  });
   return charm;
 }
 

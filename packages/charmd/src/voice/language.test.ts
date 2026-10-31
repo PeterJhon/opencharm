@@ -19,6 +19,15 @@ describe("guessing a language from words", () => {
     ).toBe("it");
   });
 
+  it("knows Chinese from its characters, even mixed with English words", () => {
+    expect(guessLanguage("帮我看一下明天的日程。")).toBe("zh");
+    expect(guessLanguage("把 package.json 里的 TypeScript 版本更新一下")).toBe(
+      "zh"
+    );
+    expect(guessLanguage("好")).toBe("zh");
+    expect(guessLanguage("帮我看一下", ["en"])).toBeUndefined();
+  });
+
   it("knows Spanish, French, German and Portuguese too", () => {
     expect(guessLanguage("¿Qué tengo en el calendario para mañana?")).toBe(
       "es"

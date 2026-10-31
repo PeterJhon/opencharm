@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ServerMessage } from "@opencharm-labs/protocol/messages";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseServerMessage } from "@opencharm-labs/protocol/parse";
 
 import { PairingRegistry } from "../auth/pairing";
 import { CharmLook, type LookMessage } from "../look";
 import { StateStore } from "../store/state-store";
-import { Session } from "./session";
+import { Session, type SessionDeps } from "./session";
 
 type Sent = ServerMessage | { closed: number };
 
@@ -18,6 +18,42 @@ const HELLO = JSON.stringify({
   type: "hello",
   version: 1,
   features: { opencharm: true },
+  transport: "websocket",
+  audio_params: {
+    format: "opus",
+    sample_rate: 16000,
+    channels: 1,
+    frame_duration: 60,
+  },
+});
+const HELLO_LONG_ASK = JSON.stringify({
+  type: "hello",
+  version: 1,
+  features: { opencharm: true, long_ask: true },
+  transport: "websocket",
+  audio_params: {
+    format: "opus",
+    sample_rate: 16000,
+    channels: 1,
+    frame_duration: 60,
+  },
+});
+const HELLO_REPORT = JSON.stringify({
+  type: "hello",
+  version: 1,
+  features: { opencharm: true, report: true },
+  transport: "websocket",
+  audio_params: {
+    format: "opus",
+    sample_rate: 16000,
+    channels: 1,
+    frame_duration: 60,
+  },
+});
+const HELLO_CLOCK = JSON.stringify({
+  type: "hello",
+  version: 1,
+  features: { opencharm: true, clock: true },
   transport: "websocket",
   audio_params: {
     format: "opus",
@@ -287,6 +323,103 @@ describe("the charm's look", () => {
   });
 });
 
+describe("the reply report (spec 003)", () => {
+  async function offeredReport(hello: string) {
+    const { token } = await pairedCharm("482913");
+    let offered: (() => boolean) | undefined;
+    const session = new Session({
+      store,
+      pairing,
+      connectionId: `conn-report-${Math.random()}`,
+      token,
+      outbound: { send: () => undefined, close: () => undefined },
+      createTurn: (io) => {
+        offered = io.report;
+        return {
+          dispose: () => undefined,
+          warm: () => undefined,
+        } as unknown as import("../turn/turn").TurnController;
+      },
+    });
+    await session.onText(hello);
+    await session.onText(unlock("482913"));
+    return offered;
+  }
+
+  it("hands the charm's report feature to the turn", async () => {
+    const offered = await offeredReport(HELLO_REPORT);
+    expect(offered?.()).toBe(true);
+  });
+
+  it("says no for a charm that doesn't offer it", async () => {
+    const offered = await offeredReport(HELLO);
+    expect(offered?.()).toBe(false);
+  });
+
+  async function unlocked(
+    hello: string,
+    createTurn?: SessionDeps["createTurn"]
+  ) {
+    const { token } = await pairedCharm("482913");
+    const sent: Sent[] = [];
+    const session = new Session({
+      store,
+      pairing,
+      connectionId: `conn-show-${Math.random()}`,
+      token,
+      ...(createTurn ? { createTurn } : {}),
+      outbound: {
+        send: (message) => sent.push(message),
+        close: () => undefined,
+      },
+    });
+    await session.onText(hello);
+    await session.onText(unlock("482913"));
+    sent.length = 0;
+    return { session, sent };
+  }
+
+  it("shows text from the computer on the report page, one line per message", async () => {
+    const { session, sent } = await unlocked(HELLO_REPORT);
+    session.showReport("## Status\n\n- built");
+    expect(sent).toEqual([
+      expect.objectContaining({ type: "tts", state: "start" }),
+      expect.objectContaining({
+        type: "tts",
+        state: "sentence_start",
+        text: "## Status",
+      }),
+      expect.objectContaining({
+        type: "tts",
+        state: "sentence_start",
+        text: "",
+      }),
+      expect.objectContaining({
+        type: "tts",
+        state: "sentence_start",
+        text: "- built",
+      }),
+      expect.objectContaining({ type: "tts", state: "stop" }),
+    ]);
+  });
+
+  it("refuses a charm whose firmware doesn't show a report", async () => {
+    const { session } = await unlocked(HELLO);
+    expect(() => session.showReport("hi")).toThrow(/doesn't show reports/);
+  });
+
+  it("refuses while the charm is in a turn", async () => {
+    const { session } = await unlocked(HELLO_REPORT, () => {
+      return {
+        busy: true,
+        warm: () => undefined,
+        dispose: () => undefined,
+      } as unknown as import("../turn/turn").TurnController;
+    });
+    expect(() => session.showReport("hi")).toThrow(/middle of a turn/);
+  });
+});
+
 describe("frame order", () => {
   it("keeps audio in order with the listen messages around it", async () => {
     const { token } = await pairedCharm("482913");
@@ -361,7 +494,7 @@ describe("questions on the charm", () => {
     expect(await second).toBe(false);
   });
 
-  it("fits the question in the charm's 200 bytes, however it's written", async () => {
+  it("fits an older charm's question in 200 bytes, however it's written", async () => {
     const { session, sent } = await unlockedSession();
     void session.ask(`${"é".repeat(150)}?`, { yes: "ÉÉÉÉÉÉÉÉ" });
     await expect.poll(() => asks(sent).length).toBe(1);
@@ -373,6 +506,30 @@ describe("questions on the charm", () => {
       12
     );
     expect(parseServerMessage(JSON.stringify(question)).ok).toBe(true);
+  });
+
+  it("sends the whole task to a charm that can scroll it, up to 2000 bytes", async () => {
+    const { token } = await pairedCharm("482913");
+    const { session, sent } = open(token);
+    await session.onText(HELLO_LONG_ASK);
+    await session.onText(unlock("482913"));
+
+    const task = `Claude Code wants to ${"run the whole task and check every file. ".repeat(12)}`;
+    void session.ask(task);
+    await expect.poll(() => asks(sent).length).toBe(1);
+    const [question] = asks(sent);
+    expect(question?.text).toBe(task); // the whole title, under 2000 bytes
+    await session.onText(answer(question?.id ?? "", false));
+
+    const tooLong = `Claude Code wants to ${"x".repeat(2500)}`;
+    void session.ask(tooLong);
+    await expect.poll(() => asks(sent).length).toBe(2);
+    const [second] = asks(sent).slice(-1);
+    expect(new TextEncoder().encode(second?.text).length).toBeLessThanOrEqual(
+      2000
+    );
+    expect(second?.text.endsWith("…")).toBe(true);
+    await session.onText(answer(second?.id ?? "", false));
   });
 
   it("ignores answers to other questions", async () => {
@@ -449,5 +606,94 @@ describe("questions on the charm", () => {
     await expect.poll(() => asks(sent).length).toBe(2);
     await session.onText(answer(asks(sent)[1]?.id ?? "", false));
     expect(await second).toBe(false);
+  });
+});
+
+describe("reading a tapped progress line (spec 017)", () => {
+  async function unlockedWithTurn(createTurn: SessionDeps["createTurn"]) {
+    const { token } = await pairedCharm("482913");
+    const sent: Sent[] = [];
+    const session = new Session({
+      store,
+      pairing,
+      connectionId: `conn-${Math.random()}`,
+      token,
+      createTurn,
+      outbound: {
+        send: (message) => sent.push(message),
+        close: (code) => sent.push({ closed: code }),
+      },
+    });
+    await session.onText(HELLO);
+    await session.onText(unlock("482913"));
+    return { session, sent };
+  }
+
+  it("offers speak in its hello and hands a tapped line to the turn", async () => {
+    const reads: string[] = [];
+    const opened = await unlockedWithTurn(
+      () =>
+        ({
+          read: (text: string) => {
+            reads.push(text);
+            return true;
+          },
+          warm: () => undefined,
+          dispose: () => undefined,
+        }) as unknown as import("../turn/turn").TurnController
+    );
+    const hello = opened.sent.find((m) => "type" in m && m.type === "hello");
+    expect(hello).toMatchObject({ features: { speak: true } });
+    await opened.session.onText(
+      JSON.stringify({ type: "charm", op: "speak", text: "Run npm test" })
+    );
+    expect(reads).toEqual(["Run npm test"]);
+  });
+});
+
+describe("the screen's clock", () => {
+  it("sends the computer's local time on unlock and each minute, to a charm that shows it", async () => {
+    const { token } = await pairedCharm("482913");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 9, 31, 21, 55, 10));
+      const sent: Sent[] = [];
+      const session = new Session({
+        store,
+        pairing,
+        connectionId: `conn-${Math.random()}`,
+        token,
+        outbound: {
+          send: (message) => sent.push(message),
+          close: (code) => sent.push({ closed: code }),
+        },
+      });
+      await session.onText(HELLO_CLOCK);
+      await session.onText(unlock("482913"));
+      const clocks = () =>
+        sent.filter((m) => "op" in m && m.op === "clock");
+      expect(clocks()).toEqual([
+        { type: "charm", op: "clock", time: "21:55" },
+      ]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(clocks()).toEqual([
+        { type: "charm", op: "clock", time: "21:55" },
+        { type: "charm", op: "clock", time: "21:56" },
+      ]);
+      // Locked: the screen is the PIN pad, so the clock stops until the next unlock.
+      session.lockRemote();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(clocks()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never sends a clock to a charm that doesn't show one", async () => {
+    const { token } = await pairedCharm("482913");
+    const { session, sent } = open(token);
+    await session.onText(HELLO);
+    await session.onText(unlock("482913"));
+    expect(sent.some((m) => "op" in m && m.op === "clock")).toBe(false);
   });
 });

@@ -14,10 +14,7 @@ import { createFakeVoice } from "./voice/fake";
 import { createLocalVoice } from "./voice/local";
 import { createMicrosoftSpeaker } from "./voice/microsoft";
 import { createOpenAiVoice } from "./voice/openai";
-import {
-  createParakeetListener,
-  createSupertonicSpeaker,
-} from "./voice/sherpa";
+import { createLocalListener, createLocalSpeaker } from "./voice/sherpa";
 import { speakWithFallback } from "./voice/speak";
 import type { Listener, Speaker, VoiceProvider } from "./voice/types";
 
@@ -29,12 +26,12 @@ function key(
   return config.apiKey ?? (env ? process.env[env] : undefined);
 }
 
-function createListener(config: ListenConfig): Listener {
+function createListener(config: ListenConfig, language: string): Listener {
   switch (config.provider) {
     case "fake":
       return createFakeVoice(config);
     case "local":
-      return createParakeetListener();
+      return createLocalListener({ language });
     case "whisper":
       return createLocalVoice({
         ...(config.model ? { whisperModel: config.model } : {}),
@@ -54,7 +51,7 @@ function createListener(config: ListenConfig): Listener {
   }
 }
 
-function createSpeaker(config: SpeakConfig): Speaker {
+function createSpeaker(config: SpeakConfig, language: string): Speaker {
   switch (config.provider) {
     case "fake":
       return createFakeVoice();
@@ -63,9 +60,10 @@ function createSpeaker(config: SpeakConfig): Speaker {
         config.voices ? { voices: config.voices } : {}
       );
     case "local":
-      return createSupertonicSpeaker(
-        config.speaker === undefined ? {} : { speaker: config.speaker }
-      );
+      return createLocalSpeaker({
+        language,
+        ...(config.speaker === undefined ? {} : { speaker: config.speaker }),
+      });
     case "system":
       return {
         ...createLocalVoice(config.voice ? { sayVoice: config.voice } : {}),
@@ -90,19 +88,21 @@ function createSpeaker(config: SpeakConfig): Speaker {
 // The chosen voice, then for Microsoft's unofficial one the local voice, then macOS's own: a reply
 // is never silent because a service failed or a model is still downloading. A paid voice with your
 // key only falls back to macOS's, so it never downloads a model you didn't ask for.
-function speakerChain(config: SpeakConfig): Speaker {
+function speakerChain(config: SpeakConfig, language: string): Speaker {
   if (config.provider === "fake" || config.provider === "system")
-    return createSpeaker(config);
-  const chain = [createSpeaker(config)];
-  if (config.provider === "microsoft") chain.push(createSupertonicSpeaker());
+    return createSpeaker(config, language);
+  const chain = [createSpeaker(config, language)];
+  if (config.provider === "microsoft")
+    chain.push(createLocalSpeaker({ language }));
   if (process.platform === "darwin")
-    chain.push(createSpeaker({ provider: "system" }));
+    chain.push(createSpeaker({ provider: "system" }, language));
   return speakWithFallback(chain);
 }
 
 function createVoiceFromConfig(config: CharmdConfig): VoiceProvider {
-  const listener = createListener(config.voice.listen);
-  const speaker = speakerChain(config.voice.speak);
+  const language = config.voice.language;
+  const listener = createListener(config.voice.listen, language);
+  const speaker = speakerChain(config.voice.speak, language);
   return {
     name:
       listener.name === speaker.name

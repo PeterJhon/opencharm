@@ -26,7 +26,9 @@ type SherpaTts = {
   sampleRate: number;
   generateAsync: (request: {
     text: string;
-    generationConfig: unknown;
+    generationConfig?: unknown;
+    sid?: number;
+    speed?: number;
     onProgress?: () => number | boolean;
   }) => Promise<SherpaAudio>;
 };
@@ -39,11 +41,18 @@ type Sherpa = {
   GenerationConfig: new (options: unknown) => unknown;
   LinearResampler: new (from: number, to: number) => SherpaResampler;
 };
-type LocalOptions = { modelsDir?: string; threads?: number };
+type LocalOptions = {
+  modelsDir?: string;
+  threads?: number;
+  // The charm's language: zh picks the Chinese models, everything else the European ones.
+  language?: string;
+};
 type SupertonicOptions = LocalOptions & { speaker?: number };
 
 // The languages Supertonic 3 speaks that charmd can tell apart (voice/language.ts); others get English.
 const SUPERTONIC_LANGUAGES = new Set(["en", "it", "es", "fr", "de", "pt"]);
+// A sentence with Han characters is spoken by the Chinese voice, even in a reply that also has English.
+const HAN = /\p{Script=Han}/u;
 // The maintainer's pick in the voice spike (packages/charmd/README.md).
 const DEFAULT_SPEAKER = 5;
 const OUTPUT_RATE = 24000;
@@ -208,4 +217,134 @@ function createSupertonicSpeaker(options: SupertonicOptions = {}) {
   };
 }
 
-export { createParakeetListener, createSupertonicSpeaker };
+function createSenseVoiceListener(options: LocalOptions = {}) {
+  const dir = options.modelsDir ?? defaultModelsDir();
+  let recognizer: Promise<SherpaRecognizer> | undefined;
+  const load = (): Promise<SherpaRecognizer> => {
+    const folder = ready("sensevoice", dir);
+    recognizer ??= loadSherpa()
+      .OfflineRecognizer.createAsync({
+        featConfig: { sampleRate: 16000, featureDim: 80 },
+        modelConfig: {
+          senseVoice: {
+            model: join(folder, "model.int8.onnx"),
+            language: "auto",
+            useInverseTextNormalization: 1,
+          },
+          tokens: join(folder, "tokens.txt"),
+          numThreads: options.threads ?? 4,
+          provider: "cpu",
+        },
+      })
+      .catch((error: unknown) => {
+        recognizer = undefined;
+        throw error;
+      });
+    return recognizer;
+  };
+  return {
+    name: "local",
+    warm: async () => {
+      await load();
+    },
+    async transcribe(ogg: Buffer): Promise<string> {
+      const engine = await load();
+      const stream = engine.createStream();
+      stream.acceptWaveform({
+        samples: toFloat(oggOpusToPcm(ogg, 16000)),
+        sampleRate: 16000,
+      });
+      const result = await engine.decodeAsync(stream);
+      return (result.text ?? "").replace(/\s+/g, " ").trim();
+    },
+  };
+}
+
+function createKokoroSpeaker(options: LocalOptions = {}) {
+  const dir = options.modelsDir ?? defaultModelsDir();
+  let tts: Promise<SherpaTts> | undefined;
+  const load = (): Promise<SherpaTts> => {
+    const folder = ready("chinese", dir);
+    tts ??= loadSherpa()
+      .OfflineTts.createAsync({
+        model: {
+          kokoro: {
+            model: join(folder, "model.int8.onnx"),
+            voices: join(folder, "voices.bin"),
+            tokens: join(folder, "tokens.txt"),
+            dataDir: join(folder, "espeak-ng-data"),
+            // Absolute: sherpa reads lexicons from the working directory otherwise.
+            lexicon: join(folder, "lexicon-zh.txt"),
+            lang: "zh",
+          },
+          numThreads: options.threads ?? 4,
+          provider: "cpu",
+        },
+        maxNumSentences: 1,
+      })
+      .catch((error: unknown) => {
+        tts = undefined;
+        throw error;
+      });
+    return tts;
+  };
+  return {
+    name: "local-zh",
+    onDevice: true,
+    warm: async () => {
+      await load();
+    },
+    async synthesize(text: string, signal: AbortSignal): Promise<Buffer> {
+      const engine = await load();
+      const audio = await engine.generateAsync({
+        text,
+        sid: 0,
+        speed: 1,
+        // Returning 0 stops the generation: a cancelled turn doesn't keep the CPU busy.
+        onProgress: () => (signal.aborted ? 0 : 1),
+      });
+      signal.throwIfAborted();
+      const sherpaModule = loadSherpa();
+      const samples =
+        audio.sampleRate === OUTPUT_RATE
+          ? audio.samples
+          : new sherpaModule.LinearResampler(
+              audio.sampleRate,
+              OUTPUT_RATE
+            ).flush(audio.samples);
+      return pcmToOggOpus(toPcm(samples), OUTPUT_RATE);
+    },
+  };
+}
+
+function createLocalListener(options: LocalOptions = {}) {
+  return options.language === "zh"
+    ? createSenseVoiceListener(options)
+    : createParakeetListener(options);
+}
+
+// The local speaker a charm in zh uses: Chinese sentences go to Kokoro, the rest to Supertonic, so a
+// reply can quote English and still be read. Other languages keep Supertonic alone.
+function createLocalSpeaker(options: SupertonicOptions = {}) {
+  if (options.language !== "zh") return createSupertonicSpeaker(options);
+  const chinese = createKokoroSpeaker(options);
+  const other = createSupertonicSpeaker(options);
+  return {
+    name: "local",
+    onDevice: true,
+    warm: async () => {
+      await Promise.allSettled([chinese.warm(), other.warm()]);
+    },
+    synthesize: (text: string, signal: AbortSignal, language?: string) =>
+      (HAN.test(text) ? chinese : other).synthesize(text, signal, language),
+  };
+}
+
+export {
+  createLocalListener,
+  createLocalSpeaker,
+  createKokoroSpeaker,
+  createParakeetListener,
+  createSenseVoiceListener,
+  createSupertonicSpeaker,
+};

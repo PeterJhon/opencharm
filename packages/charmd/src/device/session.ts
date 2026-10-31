@@ -13,6 +13,7 @@ import { fitUtf8 } from "@opencharm-labs/protocol/text";
 import type { PairingRegistry } from "../auth/pairing";
 import { generateToken, hashPin, hashToken, verifyPin } from "../auth/secrets";
 import type { LookMessage } from "../look";
+import { reportLines } from "../report";
 import type { CharmRecord, StateStore } from "../store/state-store";
 import type { TurnController } from "../turn/turn";
 
@@ -32,6 +33,8 @@ type TurnIo = {
   ask: (text: string, options?: AskOptions) => Promise<boolean>;
   // What the charm said it is in its hello ("desktop", "emulator", …; spec 015), if it said.
   kind: () => string | undefined;
+  // The charm's hello offered `features.report`: it keeps a text reply as one scrollable page.
+  report: () => boolean;
 };
 type PendingAsk = {
   id: string;
@@ -54,8 +57,10 @@ type SessionDeps = {
 const MAX_TRIES = 5;
 // Silence on a question means no.
 const ASK_TIMEOUT_MS = 30_000;
-// Limits in UTF-8 bytes, as the charm counts them.
+// Limits in UTF-8 bytes, as the charm counts them. A charm that offers `features.long_ask` scrolls
+// the full task; an older one would drop a question over 200 bytes, so it never gets one.
 const MAX_ASK_TEXT = 200;
+const MAX_ASK_TEXT_LONG = 2000;
 const MAX_ASK_LABEL = 12;
 // WebSocket close codes: 1008 policy violation, 1009 too big, 4001 our "token no longer valid".
 const CLOSE_POLICY = 1008;
@@ -78,6 +83,13 @@ class Session {
   readonly sessionId = randomBytes(8).toString("hex");
   #state: SessionState = "awaiting_hello";
   #charmId: string | undefined;
+  // The charm said in its hello that its decision screen scrolls a long question (spec 011).
+  #longAsk = false;
+  #report = false;
+  // The charm said in its hello that its screen shows the time: it gets the computer's hh:mm on
+  // unlock and again each minute.
+  #clock = false;
+  #clockTimer: ReturnType<typeof setTimeout> | undefined;
   // What the charm said it runs, in its hello (spec 015); undefined for firmware that doesn't say.
   #build: CharmBuild | undefined;
   // The charm's battery as it last reported it (spec 009), once unlocked; undefined until then and
@@ -136,6 +148,7 @@ class Session {
         },
         ask: (text, options) => this.ask(text, options),
         kind: () => this.#build?.kind,
+        report: () => this.#report,
       });
     }
     return this.#turn;
@@ -143,6 +156,7 @@ class Session {
 
   #close(code: number): void {
     if (this.#state === "closed") return;
+    this.#stopClock();
     this.#pendingAsk?.drop();
     this.#endTurn();
     this.#state = "closed";
@@ -172,7 +186,39 @@ class Session {
     const look = this.#deps.look?.();
     if (look) this.#send(look);
     this.#send({ type: "charm", op: "unlocked" });
+    this.#startClock();
     this.#activeTurn()?.warm();
+  }
+
+  // The screen's clock (spec 020): the computer's local time, not the charm's, so it follows the
+  // computer's timezone without the board keeping a clock of its own. Aligned to the minute's turn.
+  #sendClock(): void {
+    if (this.#state !== "unlocked") return;
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    this.#send({ type: "charm", op: "clock", time: `${hours}:${minutes}` });
+  }
+
+  #startClock(): void {
+    if (!this.#clock) return;
+    this.#stopClock();
+    this.#sendClock();
+    this.#scheduleClock();
+  }
+
+  #scheduleClock(): void {
+    const wait = 60_000 - (Date.now() % 60_000) + 50;
+    this.#clockTimer = setTimeout(() => {
+      this.#sendClock();
+      this.#scheduleClock();
+    }, wait);
+    this.#clockTimer.unref?.();
+  }
+
+  #stopClock(): void {
+    if (this.#clockTimer !== undefined) clearTimeout(this.#clockTimer);
+    this.#clockTimer = undefined;
   }
 
   #issuePairCode(): void {
@@ -209,6 +255,9 @@ class Session {
         return;
       }
       this.#build = message.build;
+      this.#longAsk = message.features?.long_ask === true;
+      this.#report = message.features?.report === true;
+      this.#clock = message.features?.clock === true;
       this.#onHello();
       return;
     }
@@ -225,6 +274,7 @@ class Session {
       // charm only: a board has no keyboard.
       features: {
         battery: true,
+        speak: true,
         ...(this.#build?.kind === "desktop" ? { text: true } : {}),
       },
     });
@@ -280,6 +330,9 @@ class Session {
     } else if (message.type === "charm" && message.op === "text") {
       // Only the desktop charm has a keyboard (spec 013); a board's charm can't type.
       if (this.#build?.kind === "desktop") void turn.typed(message.text);
+    } else if (message.type === "charm" && message.op === "speak") {
+      // A progress line tapped on the charm (spec 017): read it, don't start a turn.
+      void turn.read(message.text);
     }
   }
 
@@ -404,7 +457,7 @@ class Session {
         type: "charm",
         op: "ask",
         id,
-        text: fitUtf8(text, MAX_ASK_TEXT),
+        text: fitUtf8(text, this.#longAsk ? MAX_ASK_TEXT_LONG : MAX_ASK_TEXT),
         ...(yes ? { yes: fitUtf8(yes, MAX_ASK_LABEL) } : {}),
         ...(no ? { no: fitUtf8(no, MAX_ASK_LABEL) } : {}),
       });
@@ -413,6 +466,7 @@ class Session {
 
   lockRemote(): void {
     if (this.#state !== "unlocked") return;
+    this.#stopClock();
     this.#pendingAsk?.drop();
     this.#endTurn();
     this.#state = "locked";
@@ -469,6 +523,29 @@ class Session {
         "The charm is in the middle of a turn: put this in your reply instead."
       );
     void turn.say(text).catch(() => undefined);
+  }
+
+  // Text from the computer (spec 018): the charm shows it on its report page, the same page a text
+  // reply uses, without a turn or the agent. Refused while a turn is running, by a locked charm, and
+  // by a firmware that doesn't offer `features.report`.
+  showReport(text: string): void {
+    if (this.#state !== "unlocked")
+      throw new Error("The charm must be unlocked first.");
+    if (!this.#report)
+      throw new Error(
+        "This charm's firmware doesn't show reports. Update it, or use opencharm dev face."
+      );
+    if (this.#turn?.busy)
+      throw new Error(
+        "The charm is in the middle of a turn: put this in the reply instead."
+      );
+    const lines = reportLines(text);
+    if (!lines.some((line) => line.trim()))
+      throw new Error("There is nothing to show.");
+    this.#send({ type: "tts", state: "start" });
+    for (const line of lines)
+      this.#send({ type: "tts", state: "sentence_start", text: line });
+    this.#send({ type: "tts", state: "stop" });
   }
 
   devAsk(text: string, options: AskOptions = {}): Promise<boolean> {

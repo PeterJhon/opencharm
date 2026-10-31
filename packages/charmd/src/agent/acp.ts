@@ -74,7 +74,8 @@ function realFolder(path: string, what: string): string {
   }
 }
 
-// "Write /Users/me/charm/charm/notes/x.md" → "write notes/x.md": short enough to read on the charm.
+// "Write /Users/me/charm/charm/notes/x.md" → "write notes/x.md": paths shorten for the charm. The
+// full title stays: a permission question can scroll it; a progress line is fitted to its own limit.
 function describeAction(title: string, cwd: string): string {
   // MCP tools arrive as "mcp__<server>__<tool>".
   const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(title.trim());
@@ -87,8 +88,18 @@ function describeAction(title: string, cwd: string): string {
     .join("../")
     .split(homedir())
     .join("~");
-  const action = text.charAt(0).toLowerCase() + text.slice(1);
-  return action.length > 120 ? `${action.slice(0, 119)}…` : action;
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+// Windows starts npx and the other .cmd shims only through cmd.exe, which joins the command and
+// its arguments with spaces; without quotes a path such as "C:\Program Files\nodejs\node.exe"
+// becomes 'C:\Program' and nothing starts.
+function shellLine(program: string, args: string[]): string {
+  return [program, ...args]
+    .map((part) =>
+      /[\s"&|<>^()]/.test(part) ? `"${part.replace(/"/g, '\\"')}"` : part
+    )
+    .join(" ");
 }
 
 function friendly(error: unknown, program: string): Error {
@@ -134,12 +145,16 @@ function createAcpAgent(options: AcpAgentOptions): AgentAdapter {
   const home = () => realFolder(options.cwd, "the workspace");
 
   async function launch(): Promise<Agent> {
-    const proc = spawn(program, args, {
-      cwd: home(),
-      env: { ...agentEnvironment(process.env), ...options.env },
-      // npx and friends are .cmd files on Windows, which only start through a shell.
-      shell: process.platform === "win32",
-    });
+    const env = { ...agentEnvironment(process.env), ...options.env };
+    // npx and friends are .cmd files on Windows, which only start through a shell.
+    const proc =
+      process.platform === "win32"
+        ? spawn(shellLine(program, args), {
+            cwd: home(),
+            env,
+            shell: true,
+          })
+        : spawn(program, args, { cwd: home(), env });
     child = proc;
     let stderr = "";
     let failure: Error | undefined;
@@ -342,7 +357,7 @@ function createAcpAgent(options: AcpAgentOptions): AgentAdapter {
         })
         .catch(() => undefined);
     },
-    async *reply({ sessionKey, text, signal, ask }) {
+    async *reply({ sessionKey, text, signal, ask, onProgress }) {
       const { agent, sessionId } = await session(sessionKey);
       // Cancelled while the agent was starting: never send the question at all.
       if (signal.aborted) return;
@@ -363,11 +378,30 @@ function createAcpAgent(options: AcpAgentOptions): AgentAdapter {
           breakLine = false;
           wroteText = true;
           items.push({ text: update.content.text });
+        } else if (update.sessionUpdate === "plan") {
+          // The plan is sent whole on every change: it replaces the plan lines the charm shows.
+          onProgress?.({
+            kind: "plan",
+            entries: update.entries.map((entry) => ({
+              text: entry.content,
+              status: entry.status,
+            })),
+          });
+          breakLine = wroteText;
         } else if (
           update.sessionUpdate === "tool_call" ||
           update.sessionUpdate === "tool_call_update"
-        )
+        ) {
+          onProgress?.({
+            kind: "tool",
+            id: update.toolCallId,
+            ...(update.title
+              ? { text: describeAction(update.title, home()) }
+              : {}),
+            ...(update.status ? { status: update.status } : {}),
+          });
           breakLine = wroteText;
+        }
       };
       listeners.set(sessionId, own);
       const asker = ask ? { ask, signal } : undefined;

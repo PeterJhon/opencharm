@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-type ModelId = "parakeet" | "supertonic";
+type ModelId = "parakeet" | "supertonic" | "sensevoice" | "chinese";
 type ModelSpec = {
   label: string;
   url: string;
@@ -56,6 +56,32 @@ const MODELS: Record<ModelId, ModelSpec> = {
       "decoder.int8.onnx",
       "joiner.int8.onnx",
       "tokens.txt",
+    ],
+  },
+  // SenseVoice (FunAudioLLM), int8: Mandarin, English, Cantonese, Japanese and Korean, with the
+  // language detected from the audio. Used when the charm's language is zh; Parakeet covers the rest.
+  sensevoice: {
+    label: "SenseVoice (Chinese listening)",
+    url: `${RELEASES}/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2`,
+    sha256: "7305f7905bfcf77fa0b39388a313f3da35c68d971661a65475b56fb2162c8e63",
+    bytes: 165783878,
+    folder: "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09",
+    files: ["model.int8.onnx", "tokens.txt"],
+  },
+  // Kokoro 82M v1.1-zh (Apache-2.0), int8, as exported for sherpa-onnx: Chinese with an English
+  // lexicon; 24 kHz. The Chinese sentences of a zh charm are spoken with it.
+  chinese: {
+    label: "Chinese (speaking)",
+    url: `${RELEASES}/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2`,
+    sha256: "259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c",
+    bytes: 147052523,
+    folder: "kokoro-int8-multi-lang-v1_1",
+    files: [
+      "model.int8.onnx",
+      "voices.bin",
+      "tokens.txt",
+      "lexicon-zh.txt",
+      "espeak-ng-data/phontab",
     ],
   },
   // Supertone's Supertonic 3, int8, as exported for sherpa-onnx.
@@ -99,17 +125,29 @@ function isInstalled(spec: ModelSpec, dir: string): boolean {
   return spec.files.every((file) => existsSync(join(dir, spec.folder, file)));
 }
 
+// Windows: Git's GNU tar, often first on a developer's PATH, reads the drive letter in an archive's
+// own path as a remote host ("Cannot connect to C:"). The system tar is bsdtar and reads it.
+function tarProgram(): string {
+  return process.platform === "win32"
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+    : "tar";
+}
+
 function untar(archive: string, into: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile("tar", ["-xjf", archive, "-C", into], (error, _out, stderr) => {
-      if (!error) resolve();
-      else
-        reject(
-          new Error(
-            `Couldn't unpack the model: ${stderr.trim().slice(0, 200) || error.message}`
-          )
-        );
-    });
+    execFile(
+      tarProgram(),
+      ["-xjf", archive, "-C", into],
+      (error, _out, stderr) => {
+        if (!error) resolve();
+        else
+          reject(
+            new Error(
+              `Couldn't unpack the model: ${stderr.trim().slice(0, 200) || error.message}`
+            )
+          );
+      }
+    );
   });
 }
 
@@ -242,5 +280,6 @@ export {
   installModel,
   modelPath,
   modelState,
+  tarProgram,
 };
 export type { ModelId, ModelSpec, ModelState };

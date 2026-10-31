@@ -186,15 +186,19 @@ const COMMON_WORDS: Record<string, string[]> = {
     "muito",
   ],
 };
-const LANGUAGES = Object.keys(COMMON_WORDS);
+const LANGUAGES = [...Object.keys(COMMON_WORDS), "zh"];
 const WORDS = new Map(
   LANGUAGES.map((language) => [language, new Set(COMMON_WORDS[language])])
 );
+// Chinese has no word spaces to score, and a sentence may mix it with English ("帮我看下
+// package.json"): any Han character is enough to call it Chinese.
+const HAN = /\p{Script=Han}/u;
 
 function guessLanguage(
   text: string,
   among: readonly string[] = LANGUAGES
 ): string | undefined {
+  if (among.includes("zh") && HAN.test(text)) return "zh";
   // "dell'agente" counts as "dell'" and "agente"; "aujourd'hui" stays one word.
   const words = text.toLowerCase().match(/[\p{L}]+(?:'(?:hui))?/gu) ?? [];
   const scores = among

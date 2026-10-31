@@ -217,8 +217,10 @@ async function startDaemon(
           timeoutMs: config.turnTimeoutSeconds * 1000,
           logTranscripts: config.logTranscripts,
           log,
-          // Only the desktop charm can read instead of listen: a charm on a board always speaks.
-          speakAloud: () => io.kind() !== "desktop" || replies.speak,
+          // Speak replies is one setting for every charm: off, a board shows the reply as text too.
+          speakAloud: () => replies.speak,
+          // A voice turn asks the person to send or redo what was heard (spec 019).
+          confirmHeard: () => config.confirmHeard,
         }),
     });
     sessions.set(session.connectionId, session);

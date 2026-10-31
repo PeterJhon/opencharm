@@ -235,6 +235,9 @@ const schema = z
     // Off: the desktop charm shows replies as text instead of speaking them (spec 003); a charm
     // on a board always speaks. Changed while running with the admin command "replies".
     speakReplies: z.boolean().default(true),
+    // Ask the person to confirm what was heard before the agent runs (spec 019): hold = send,
+    // press = redo. A stray hold or a misheard question never reaches the agent.
+    confirmHeard: z.boolean().default(true),
     charm: charmSchema.prefault({}),
   })
   .strict();

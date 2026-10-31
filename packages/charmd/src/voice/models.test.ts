@@ -15,7 +15,13 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { MODELS, installModel, modelState, type ModelSpec } from "./models";
+import {
+  MODELS,
+  installModel,
+  modelState,
+  tarProgram,
+  type ModelSpec,
+} from "./models";
 
 let root: string;
 let server: Server;
@@ -29,7 +35,7 @@ beforeAll(async () => {
   mkdirSync(join(src, "tiny-model"), { recursive: true });
   writeFileSync(join(src, "tiny-model", "model.onnx"), "weights");
   writeFileSync(join(src, "tiny-model", "tokens.txt"), "a b c");
-  execFileSync("tar", [
+  execFileSync(tarProgram(), [
     "-cjf",
     join(root, "tiny.tar.bz2"),
     "-C",
@@ -66,6 +72,14 @@ function spec(overrides: Partial<ModelSpec> = {}): ModelSpec {
 }
 
 describe("model downloads", () => {
+  it("unpacks with Windows' own tar, where Git's tar reads C: as a host", () => {
+    expect(tarProgram()).toBe(
+      process.platform === "win32"
+        ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+        : "tar"
+    );
+  });
+
   it("pins every shipped model to an https URL and a SHA-256", () => {
     for (const model of Object.values(MODELS)) {
       expect(model.url).toMatch(

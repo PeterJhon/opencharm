@@ -25,6 +25,18 @@ describe("wiring", () => {
         })
       )
     ).toMatchObject({ name: "local+microsoft", language: "it" });
+    // Chinese picks the SenseVoice/Kokoro pair, but the pair still reports itself as local.
+    expect(
+      createVoiceFromConfig(
+        parseConfig({
+          voice: {
+            listen: { provider: "local" },
+            speak: { provider: "local" },
+            language: "zh",
+          },
+        })
+      )
+    ).toMatchObject({ name: "local", language: "zh" });
     expect(createAgentFromConfig(config).name).toBe("hermes");
   });
 
