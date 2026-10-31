@@ -1,6 +1,6 @@
 # OpenCharm
 
-This is what OpenCharm is today, for people and coding agents. Changes are proposed and recorded as numbered specs in `specs/` (index: [specs/README.md](specs/README.md)); git keeps the history. Component detail lives next to its code: [hardware/README.md](hardware/README.md), [firmware/README.md](firmware/README.md), [packages/charmd/README.md](packages/charmd/README.md), [packages/protocol/README.md](packages/protocol/README.md), [apps/desktop/README.md](apps/desktop/README.md), [docs/build.md](docs/build.md), [docs/deploy.md](docs/deploy.md) and [CONTRIBUTING.md](CONTRIBUTING.md). When code and this file disagree, flag it and fix one of them in the same change; never drift silently.
+This is what OpenCharm is today, for people and coding agents. Changes are proposed and recorded as numbered specs in `specs/` (index: [specs/README.md](specs/README.md)); git keeps the history. Component detail lives next to its code: [hardware/README.md](hardware/README.md), [firmware/README.md](firmware/README.md), [packages/charmd/README.md](packages/charmd/README.md), [packages/protocol/README.md](packages/protocol/README.md), [apps/desktop/README.md](apps/desktop/README.md), [docs/build.md](docs/build.md), [docs/deploy.md](docs/deploy.md), [docs/computer-updates.md](docs/computer-updates.md) and [CONTRIBUTING.md](CONTRIBUTING.md). When code and this file disagree, flag it and fix one of them in the same change; never drift silently.
 
 Licence of this document: CC BY-SA 4.0 (see README). Prices and specs were checked on 29–30 September 2026; anything marked _unverified_ needs a physical board or a build to confirm.
 
@@ -19,7 +19,8 @@ Licence of this document: CC BY-SA 4.0 (see README). Prices and specs were check
 | Hardware                                         | Reference board: Waveshare ESP32-S3-Touch-AMOLED-2.16                                                                                                              |
 | Firmware, OpenCharm OS (`firmware/`)             | Core and emulator built (specs 005, 006); on the board, stages 1–3 of 4 built and used by hand (009: face, battery, status; Wi-Fi + charmd; voice, ElevenLabs too) |
 | charmd, the charm daemon                         | Built (specs 002, 003, 010, 011, 012); the droplet deploy waits for a droplet (007)                                                                                |
-| Desktop charm (`apps/desktop`)                   | macOS app built (spec 013); Windows builds in CI, untested on a real machine                                                                                       |
+| Desktop charm (`apps/desktop`)                   | macOS app built (spec 013); Windows 11 source build checked through setup, Settings, charmd and board discovery; installer and a full turn still untested          |
+| Updates from the computer                        | Built (spec 018): `opencharm show`, `opencharm hook` for Claude Code; guide in `docs/computer-updates.md`                                                          |
 | Build guide                                      | `docs/build.md`                                                                                                                                                    |
 
 ## 2. Principles and the moment of truth
@@ -96,23 +97,23 @@ Skills (text files the agent learns; examples, not promises): cook hands-free, t
 
 ### 4.1 One key, three moves
 
-| Move              | Meaning                                                |
-| ----------------- | ------------------------------------------------------ |
-| **Hold the key**  | Talk (push-to-talk). While the orange ring is on: yes. |
-| **Press the key** | Everything else: wake, stop talking, dismiss, no.      |
-| **Tap the face**  | It reacts. That's all.                                 |
+| Move                     | Meaning                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| **Hold the key**         | Talk (push-to-talk). While the orange ring is on: yes — on the transcript it shows, send it.           |
+| **Press the key**        | Everything else: wake, stop talking, dismiss, no — on the transcript, redo it (the next hold records). |
+| **Tap or hold the face** | A tap: it reacts. A hold: the status screen, or the agent's progress while it works (specs 009, 017).  |
 
 No swipes needed. Rule: if someone can't use it ten seconds after picking it up, we've failed. The mic is on only while the key is down, and nothing leaves the charm unless it's a hold (200 ms; shorter is a press, and what the mic heard is dropped); the audio from key-down is kept so the first word isn't cut. Physical reactions (IMU): pick up → greeting, face-down → asleep and muted (the agent keeps running), shake → dizzy.
 
 ### 4.2 Three screen layouts
 
-| Layout       | When                   | What it looks like                                                            |
-| ------------ | ---------------------- | ----------------------------------------------------------------------------- |
-| **Face**     | Most of the time       | Eyes and optional mouth, centred. Blinks, glances.                            |
-| **Speech**   | Answers, confirmations | Eyes shrink and move up; one line types out underneath while the mouth flaps. |
-| **Decision** | Approvals, questions   | Speech layout + orange ring + a hint line, e.g. `HOLD · SEND    PRESS · NO`.  |
+| Layout       | When                   | What it looks like                                                                                |
+| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------- |
+| **Face**     | Most of the time       | Eyes and optional mouth, centred. Blinks, glances.                                                |
+| **Speech**   | Answers, confirmations | Eyes shrink and move up; one line types out underneath while the mouth flaps.                     |
+| **Decision** | Approvals, questions   | Speech layout + orange ring + a hint line, e.g. `HOLD · SEND    PRESS · NO`; a long task scrolls. |
 
-Rules: one thing per screen; glyphs on true black; orange only when it needs you. No menus on the charm: settings live on the computer. The one exception is a read-only status screen (battery, temperatures, Wi-Fi, charmd), opened by touching and holding the face (spec 009).
+Rules: one thing per screen; glyphs on true black; orange only when it needs you. No menus on the charm: settings live on the computer. The one exception is a read-only status screen (battery, temperatures, Wi-Fi, charmd), opened by touching and holding the face (spec 009). While the agent is working, the same hold shows its progress instead: a scrollable list of its plan and tool calls, never orange; tapping a line reads it aloud without ending the turn (spec 017).
 
 ## 5. The face
 
@@ -211,11 +212,12 @@ The program between the charm and the agent (the _d_ is the Unix habit for backg
 
 - **Agents:** charmd starts a local agent itself over ACP (spec 010), or calls a server agent's HTTP API (Hermes, OpenClaw, anything OpenAI-compatible), with a stable session per charm. A new conversation starts when the person asks for one (by voice, through the agent's `new_conversation` tool; `opencharm new`; the desktop app's menu) or after a pause longer than `newConversationAfterMinutes` (default 120 minutes; 0 = never); a reply in progress finishes first, and the agent keeps its own memory (spec 003). A local agent works in a workspace cloned from opencharm-starter (`opencharm init`), with its permissions pinned by tests. It works for the person: the starter runs Claude Code in auto mode (`"mode": "auto"` in `opencharm.json`), so it runs commands and edits the project folders it's given (`projects`). Claude Code's reviewer approves or blocks each action; a few (its safety checks) come to the charm as a yes/no, and its instructions tell it to ask on the charm before anything hard to undo. charmd's own default for Claude Code stays `acceptEdits`, so a workspace only gets auto mode by asking for it.
 - **The agent drives the charm** through an MCP server, `opencharm mcp`, with the tools `say`, `show_face`, `ask`, `notify`, `new_conversation` (spec 012) and `set_look` (spec 014). A permission request from the agent becomes a question on the charm; answers are always "once" (spec 011).
+- **Updates from the computer** (spec 018): `opencharm show` puts text on the charm as its report page without starting a turn, and `opencharm hook` mirrors Claude Code's events: its finished answer, a notification as the orange face, and each tool call as a working face. A charm in a turn is left alone (the update is refused). Guide: [docs/computer-updates.md](docs/computer-updates.md).
 - **At rest** it does no work between turns (one shared WebSocket ping every 30 s). Detail, config and measured latency: [packages/charmd/README.md](packages/charmd/README.md).
 
 ### 7.3 The desktop charm
 
-OpenCharm without the hardware (spec 013): `apps/desktop`, a Tauri 2 app around the same firmware core. On a Mac the eyes sit on either side of the notch, and a panel opens below it for speech, questions and pairing; elsewhere it's a black pill at the top centre. A global talk key (⌥ Space by default) works in any app, and the mic is open only while it's held; with Speak replies off (menu bar) its replies show as text instead, and a typing key (⌥⇧ Space) opens a one-line field to type to it, answered as text. The first time, a guided setup takes you through the agent, its folder (a new workspace or one you have), a name and colour, the voice and a first hello. **Add a charm…** connects a board to the same agent: with Charms on this network on, the board finds the app's charmd on the Wi-Fi by itself, and pairs with the code typed from its screen and a PIN chosen in the app. It carries and runs its own charmd and Node (spec 013, on a port the system gives it), so nothing else needs installing, and pairs with it by itself. Releases for macOS and Windows come from CI with checksums, without a developer signature by choice (macOS builds are signed ad hoc). Detail: [apps/desktop/README.md](apps/desktop/README.md).
+OpenCharm without the hardware (spec 013): `apps/desktop`, a Tauri 2 app around the same firmware core. On a Mac the eyes sit on either side of the notch, and a panel opens below it for speech, questions and pairing; elsewhere it's a black pill at the top centre. A global talk key (⌥ Space by default) works in any app, and the mic is open only while it's held; with Speak replies off (menu bar) replies show as text on every charm, the board included, and a typing key (⌥⇧ Space) opens a one-line field to type to it, answered as text. The first time, a guided setup takes you through the agent, its folder (a new workspace or one you have), a name and colour, the voice and a first hello. **Add a charm…** connects a board to the same agent: with Charms on this network on, the board finds the app's charmd on the Wi-Fi by itself, and pairs with the code typed from its screen and a PIN chosen in the app. It carries and runs its own charmd and Node (spec 013, on a port the system gives it), so nothing else needs installing, and pairs with it by itself. Releases for macOS and Windows come from CI with checksums, without a developer signature by choice (macOS builds are signed ad hoc). Detail: [apps/desktop/README.md](apps/desktop/README.md).
 
 ## 8. Protocol (charm ↔ charmd)
 
@@ -225,7 +227,7 @@ We speak xiaozhi-esp32's WebSocket protocol and add one namespaced message type,
 - **Kept from XiaoZhi:** `hello`, `listen` (key held / released), `abort`, binary Opus (up 16 kHz mono 60 ms frames, down 24 kHz), `stt`, `tts` (start, sentence, stop) and `llm` `emotion` for stock devices. Ours include `charm text`, typed text from the desktop charm, offered to the desktop charm in charmd's hello (`features.text`).
 - **What the charm runs:** its `hello` may carry `build: { kind, version, commit }` (`emulator`, `desktop` or `board`; spec 015). It's optional, so stock XiaoZhi firmware still connects, and never a reason to refuse a charm; `opencharm status` shows it.
 - **Ours:** pairing (`pair_code`, `paired`), the lock (`unlock`, `unlocked`, `locked`, `revoked`), `face` (an agent state id from section 5.4, with an optional feeling and short line) questions (`ask`, `ask_end`, `answer`), the charm's identity (`look`, sent right before every `unlocked`) and its battery (`battery`, from a charm that has one, to a charmd whose hello offers `features.battery`; spec 009). Later: `notify`, `signal`, `permissions`.
-- "Speaking" is not a face: the charm shows its speech layout between `tts start` and `tts stop`. Until `unlocked`, charmd ignores `listen` and audio and answers `locked`.
+- "Speaking" is not a face: the charm shows its speech layout between `tts start` and `tts stop`. A charm that offers `features.report` keeps a text reply (no audio frames) as a report of the agent's whole reply as written, one line per `tts sentence_start`; a press or a tap brings the face back. Until `unlocked`, charmd ignores `listen` and audio and answers `locked`.
 
 ## 9. Security and permissions
 
